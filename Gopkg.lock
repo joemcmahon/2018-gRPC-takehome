@@ -2,14 +2,6 @@
 
 
 [[projects]]
-  digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
-  name = "github.com/davecgh/go-spew"
-  packages = ["spew"]
-  pruneopts = "UT"
-  revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
-  version = "v1.1.1"
-
-[[projects]]
   digest = "1:693fb1ba2c76dcac2368bf868ccde37dcc1510d401414c9a7a45571d9bd89cf7"
   name = "github.com/disiqueira/gotree"
   packages = ["."]
@@ -79,6 +71,14 @@
   pruneopts = "UT"
   revision = "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
   version = "v1.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:1559987f6663387df7f4131dec3aac82476f9ff7666aaa82cbcad47689bcb459"
+  name = "github.com/joemcmahon/logcap"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "82e65a130583cfc2097693e0d3f780e7fd78739a"
 
 [[projects]]
   digest = "1:c568d7727aa262c32bdf8a3f7db83614f7af0ed661474b24588de635c20024c7"
@@ -362,9 +362,9 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/davecgh/go-spew/spew",
     "github.com/disiqueira/gotree",
     "github.com/golang/protobuf/proto",
+    "github.com/joemcmahon/logcap",
     "github.com/mitchellh/go-homedir",
     "github.com/onsi/ginkgo",
     "github.com/onsi/gomega",
