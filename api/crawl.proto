@@ -19,7 +19,7 @@ message URLRequest {
 
 // URLState reports the crawl status ONLY of a URL.
 message URLState {
-    enum urlStatus {
+    enum Status {
         STOPPED = 0;  // Crawler has stopped crawling this URL.
                       // START for a STOPPED URL resumes the crawl.
                       // STOP for a STOPPED URL does nothing.
@@ -40,7 +40,9 @@ message URLState {
                       // Only returned for a STOP.
         FAILED = 4;   // Crawl failed for some reason. 
     }
-    urlStatus status = 1;
+    Status status = 1;
+    string Message = 2;
+
 }
 
 // SiteNode is returned in response to a STATUS request.
