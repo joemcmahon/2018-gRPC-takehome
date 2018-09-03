@@ -28,24 +28,28 @@ type URLRequestCommand int32
 const (
 	// URLs in STOPPED, NONE, or DONE may be started.
 	URLRequest_START URLRequestCommand = 0
-	// URLS in CRAWLING, STOPPED, or DONE may be stopped.
+	// URLs in CRAWLING, STOPPED, or DONE may be stopped.
 	URLRequest_STOP URLRequestCommand = 1
+	// URLs in any state may be checked.
+	URLRequest_CHECK URLRequestCommand = 2
 )
 
 var URLRequestCommand_name = map[int32]string{
 	0: "START",
 	1: "STOP",
+	2: "CHECK",
 }
 var URLRequestCommand_value = map[string]int32{
 	"START": 0,
 	"STOP":  1,
+	"CHECK": 2,
 }
 
 func (x URLRequestCommand) String() string {
 	return proto.EnumName(URLRequestCommand_name, int32(x))
 }
 func (URLRequestCommand) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_crawl_fc3fe5073539bfa3, []int{0, 0}
+	return fileDescriptor_crawl_d76c9fbb24143501, []int{0, 0}
 }
 
 type URLStateUrlStatus int32
@@ -54,7 +58,7 @@ const (
 	URLState_STOPPED URLStateUrlStatus = 0
 	// START for a STOPPED URL resumes the crawl.
 	// STOP for a STOPPED URL does nothing.
-	URLState_CRAWLING URLStateUrlStatus = 1
+	URLState_RUNNING URLStateUrlStatus = 1
 	// Once it completes the crawl, it switches
 	// the URL's state to DONE. START for a
 	// CRAWLING URL is a no-op. STOP for a CRAWLING
@@ -64,27 +68,34 @@ const (
 	// URL, it discards the crawl history and
 	// crawls it again. If it receives a STOP, it
 	// does nothing.
-	URLState_NEVER URLStateUrlStatus = 3
+	URLState_UNKNOWN URLStateUrlStatus = 3
+	// This is a meta-state; URLs never crawled
+	// are not recorded in the client to avoid a
+	// possible DoS from a clog of never-crawled URLs.
+	// Only returned for a STOP.
+	URLState_FAILED URLStateUrlStatus = 4
 )
 
 var URLStateUrlStatus_name = map[int32]string{
 	0: "STOPPED",
-	1: "CRAWLING",
+	1: "RUNNING",
 	2: "DONE",
-	3: "NEVER",
+	3: "UNKNOWN",
+	4: "FAILED",
 }
 var URLStateUrlStatus_value = map[string]int32{
-	"STOPPED":  0,
-	"CRAWLING": 1,
-	"DONE":     2,
-	"NEVER":    3,
+	"STOPPED": 0,
+	"RUNNING": 1,
+	"DONE":    2,
+	"UNKNOWN": 3,
+	"FAILED":  4,
 }
 
 func (x URLStateUrlStatus) String() string {
 	return proto.EnumName(URLStateUrlStatus_name, int32(x))
 }
 func (URLStateUrlStatus) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_crawl_fc3fe5073539bfa3, []int{1, 0}
+	return fileDescriptor_crawl_d76c9fbb24143501, []int{1, 0}
 }
 
 // URLRequest defines the outgoing request.
@@ -102,7 +113,7 @@ func (m *URLRequest) Reset()         { *m = URLRequest{} }
 func (m *URLRequest) String() string { return proto.CompactTextString(m) }
 func (*URLRequest) ProtoMessage()    {}
 func (*URLRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_crawl_fc3fe5073539bfa3, []int{0}
+	return fileDescriptor_crawl_d76c9fbb24143501, []int{0}
 }
 func (m *URLRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_URLRequest.Unmarshal(m, b)
@@ -148,7 +159,7 @@ func (m *URLState) Reset()         { *m = URLState{} }
 func (m *URLState) String() string { return proto.CompactTextString(m) }
 func (*URLState) ProtoMessage()    {}
 func (*URLState) Descriptor() ([]byte, []int) {
-	return fileDescriptor_crawl_fc3fe5073539bfa3, []int{1}
+	return fileDescriptor_crawl_d76c9fbb24143501, []int{1}
 }
 func (m *URLState) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_URLState.Unmarshal(m, b)
@@ -182,18 +193,19 @@ func (m *URLState) GetStatus() URLStateUrlStatus {
 // knows about are returned as the children of a SiteNode
 // with the siteURL "all://".
 type SiteNode struct {
-	SiteURL              string      `protobuf:"bytes,1,opt,name=siteURL,proto3" json:"siteURL,omitempty"`
-	Children             []*SiteNode `protobuf:"bytes,2,rep,name=children,proto3" json:"children,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}    `json:"-"`
-	XXX_unrecognized     []byte      `json:"-"`
-	XXX_sizecache        int32       `json:"-"`
+	SiteURL              string   `protobuf:"bytes,1,opt,name=siteURL,proto3" json:"siteURL,omitempty"`
+	TreeString           string   `protobuf:"bytes,2,opt,name=treeString,proto3" json:"treeString,omitempty"`
+	Status               string   `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
 func (m *SiteNode) Reset()         { *m = SiteNode{} }
 func (m *SiteNode) String() string { return proto.CompactTextString(m) }
 func (*SiteNode) ProtoMessage()    {}
 func (*SiteNode) Descriptor() ([]byte, []int) {
-	return fileDescriptor_crawl_fc3fe5073539bfa3, []int{2}
+	return fileDescriptor_crawl_d76c9fbb24143501, []int{2}
 }
 func (m *SiteNode) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SiteNode.Unmarshal(m, b)
@@ -220,11 +232,18 @@ func (m *SiteNode) GetSiteURL() string {
 	return ""
 }
 
-func (m *SiteNode) GetChildren() []*SiteNode {
+func (m *SiteNode) GetTreeString() string {
 	if m != nil {
-		return m.Children
+		return m.TreeString
 	}
-	return nil
+	return ""
+}
+
+func (m *SiteNode) GetStatus() string {
+	if m != nil {
+		return m.Status
+	}
+	return ""
 }
 
 func init() {
@@ -249,12 +268,12 @@ const _ = grpc.SupportPackageIsVersion4
 type CrawlClient interface {
 	// Because we're calling the client from our CLI, we
 	// want the CrawlSite API to make a single request
-	// and wait for the response.
+	// and wait for the response. This API lets us start,
+	// stop, or check the status of a URL
 	CrawlSite(ctx context.Context, in *URLRequest, opts ...grpc.CallOption) (*URLState, error)
-	// I'm defining this this way so that if I'm mistaken and
-	// I have to create a stream of SiteNode messages to
-	// successfully return all the crawls, this will still work.
-	URLStatus(ctx context.Context, in *URLRequest, opts ...grpc.CallOption) (Crawl_URLStatusClient, error)
+	// Checks the current status of a crawl and returns
+	// the tree as it stands.
+	CrawlResult(ctx context.Context, in *URLRequest, opts ...grpc.CallOption) (*SiteNode, error)
 }
 
 type crawlClient struct {
@@ -274,48 +293,25 @@ func (c *crawlClient) CrawlSite(ctx context.Context, in *URLRequest, opts ...grp
 	return out, nil
 }
 
-func (c *crawlClient) URLStatus(ctx context.Context, in *URLRequest, opts ...grpc.CallOption) (Crawl_URLStatusClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_Crawl_serviceDesc.Streams[0], "/crawl.Crawl/URLStatus", opts...)
+func (c *crawlClient) CrawlResult(ctx context.Context, in *URLRequest, opts ...grpc.CallOption) (*SiteNode, error) {
+	out := new(SiteNode)
+	err := c.cc.Invoke(ctx, "/crawl.Crawl/CrawlResult", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &crawlURLStatusClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-type Crawl_URLStatusClient interface {
-	Recv() (*SiteNode, error)
-	grpc.ClientStream
-}
-
-type crawlURLStatusClient struct {
-	grpc.ClientStream
-}
-
-func (x *crawlURLStatusClient) Recv() (*SiteNode, error) {
-	m := new(SiteNode)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
+	return out, nil
 }
 
 // CrawlServer is the server API for Crawl service.
 type CrawlServer interface {
 	// Because we're calling the client from our CLI, we
 	// want the CrawlSite API to make a single request
-	// and wait for the response.
+	// and wait for the response. This API lets us start,
+	// stop, or check the status of a URL
 	CrawlSite(context.Context, *URLRequest) (*URLState, error)
-	// I'm defining this this way so that if I'm mistaken and
-	// I have to create a stream of SiteNode messages to
-	// successfully return all the crawls, this will still work.
-	URLStatus(*URLRequest, Crawl_URLStatusServer) error
+	// Checks the current status of a crawl and returns
+	// the tree as it stands.
+	CrawlResult(context.Context, *URLRequest) (*SiteNode, error)
 }
 
 func RegisterCrawlServer(s *grpc.Server, srv CrawlServer) {
@@ -340,25 +336,22 @@ func _Crawl_CrawlSite_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Crawl_URLStatus_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(URLRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
+func _Crawl_CrawlResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(URLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
 	}
-	return srv.(CrawlServer).URLStatus(m, &crawlURLStatusServer{stream})
-}
-
-type Crawl_URLStatusServer interface {
-	Send(*SiteNode) error
-	grpc.ServerStream
-}
-
-type crawlURLStatusServer struct {
-	grpc.ServerStream
-}
-
-func (x *crawlURLStatusServer) Send(m *SiteNode) error {
-	return x.ServerStream.SendMsg(m)
+	if interceptor == nil {
+		return srv.(CrawlServer).CrawlResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/crawl.Crawl/CrawlResult",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CrawlServer).CrawlResult(ctx, req.(*URLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 var _Crawl_serviceDesc = grpc.ServiceDesc{
@@ -369,38 +362,37 @@ var _Crawl_serviceDesc = grpc.ServiceDesc{
 			MethodName: "CrawlSite",
 			Handler:    _Crawl_CrawlSite_Handler,
 		},
-	},
-	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "URLStatus",
-			Handler:       _Crawl_URLStatus_Handler,
-			ServerStreams: true,
+			MethodName: "CrawlResult",
+			Handler:    _Crawl_CrawlResult_Handler,
 		},
 	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "crawl.proto",
 }
 
-func init() { proto.RegisterFile("crawl.proto", fileDescriptor_crawl_fc3fe5073539bfa3) }
+func init() { proto.RegisterFile("crawl.proto", fileDescriptor_crawl_d76c9fbb24143501) }
 
-var fileDescriptor_crawl_fc3fe5073539bfa3 = []byte{
-	// 301 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x91, 0xc1, 0x4b, 0xf3, 0x40,
-	0x10, 0xc5, 0xb3, 0xed, 0x97, 0x36, 0x99, 0x7e, 0xd8, 0x75, 0x4e, 0xd1, 0x83, 0x94, 0x3d, 0x15,
-	0x84, 0x68, 0xdb, 0xa3, 0xa7, 0xd2, 0x06, 0x11, 0x42, 0x5a, 0x37, 0xad, 0x9e, 0x63, 0xb2, 0x60,
-	0x20, 0xed, 0x6a, 0xb2, 0x41, 0xf0, 0xaf, 0x97, 0xdd, 0x26, 0x2d, 0x2a, 0x78, 0x9b, 0x99, 0xfc,
-	0xde, 0x7b, 0x33, 0x59, 0x18, 0xa4, 0x65, 0xf2, 0x51, 0xf8, 0x6f, 0xa5, 0x54, 0x12, 0x6d, 0xd3,
-	0x30, 0x09, 0xb0, 0xe5, 0x21, 0x17, 0xef, 0xb5, 0xa8, 0x14, 0x52, 0xe8, 0x6e, 0x79, 0xe8, 0x91,
-	0x11, 0x19, 0xbb, 0x5c, 0x97, 0x78, 0x03, 0x76, 0xa5, 0x12, 0x25, 0xbc, 0xce, 0x88, 0x8c, 0xcf,
-	0xa6, 0x17, 0xfe, 0xc1, 0xe3, 0xa4, 0xf1, 0x53, 0xb9, 0xdb, 0x25, 0xfb, 0x8c, 0x1f, 0x38, 0x76,
-	0x05, 0xfd, 0x66, 0x82, 0x2e, 0xd8, 0xf1, 0x66, 0xce, 0x37, 0xd4, 0x42, 0x07, 0xfe, 0xc5, 0x9b,
-	0xd5, 0x9a, 0x12, 0xf6, 0x09, 0xce, 0x96, 0x87, 0xb1, 0x66, 0x71, 0x02, 0x3d, 0x2d, 0xaa, 0x2b,
-	0x93, 0xf8, 0xcd, 0xdd, 0x00, 0x7e, 0x5d, 0x16, 0xb1, 0x01, 0x78, 0x03, 0xb2, 0x3b, 0x70, 0x8f,
-	0x43, 0x1c, 0x40, 0x5f, 0xbb, 0xae, 0x83, 0x25, 0xb5, 0xf0, 0x3f, 0x38, 0x0b, 0x3e, 0x7f, 0x0e,
-	0x1f, 0xa2, 0x7b, 0x4a, 0x74, 0xe0, 0x72, 0x15, 0x05, 0xb4, 0xa3, 0xb7, 0x88, 0x82, 0xa7, 0x80,
-	0xd3, 0x2e, 0x7b, 0x04, 0x27, 0xce, 0x95, 0x88, 0x64, 0x26, 0xd0, 0x83, 0x7e, 0x95, 0x2b, 0x71,
-	0x3a, 0xb7, 0x6d, 0xf1, 0x1a, 0x9c, 0xf4, 0x35, 0x2f, 0xb2, 0x52, 0xec, 0xbd, 0xce, 0xa8, 0x3b,
-	0x1e, 0x4c, 0x87, 0xcd, 0x5e, 0xad, 0x98, 0x1f, 0x81, 0xa9, 0x04, 0x7b, 0xa1, 0xbf, 0xe1, 0x04,
-	0x5c, 0x53, 0x68, 0x06, 0xcf, 0x7f, 0xfd, 0xa6, 0xcb, 0xe1, 0x8f, 0xdb, 0x98, 0x85, 0x33, 0x70,
-	0x9b, 0xae, 0xae, 0xfe, 0x92, 0xb4, 0xb1, 0xcc, 0xba, 0x25, 0x2f, 0x3d, 0xf3, 0x7c, 0xb3, 0xaf,
-	0x00, 0x00, 0x00, 0xff, 0xff, 0x10, 0x5a, 0xac, 0x80, 0xcd, 0x01, 0x00, 0x00,
+var fileDescriptor_crawl_d76c9fbb24143501 = []byte{
+	// 319 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x51, 0x4d, 0x4f, 0xc2, 0x40,
+	0x14, 0xec, 0x02, 0x05, 0xfa, 0x48, 0x74, 0x7d, 0x07, 0x83, 0x1e, 0x0c, 0xd9, 0x13, 0x5e, 0x6a,
+	0x80, 0x5f, 0x40, 0xa0, 0x0a, 0xa1, 0x59, 0xc8, 0x2e, 0x8d, 0x17, 0x2f, 0x08, 0x1b, 0xd3, 0xa4,
+	0x50, 0x6d, 0xb7, 0x31, 0xf1, 0x0f, 0xf8, 0xb7, 0xcd, 0x2e, 0x05, 0xfc, 0x48, 0xbc, 0xbd, 0x99,
+	0x9d, 0x79, 0x93, 0x79, 0x0b, 0xad, 0x75, 0xb6, 0x7a, 0x4f, 0xfc, 0xd7, 0x2c, 0xd5, 0x29, 0xba,
+	0x16, 0xb0, 0x0f, 0x80, 0x48, 0x84, 0x42, 0xbd, 0x15, 0x2a, 0xd7, 0x48, 0xa1, 0x1a, 0x89, 0xb0,
+	0x4d, 0x3a, 0xa4, 0xeb, 0x09, 0x33, 0xe2, 0x1d, 0xb8, 0xb9, 0x5e, 0x69, 0xd5, 0xae, 0x74, 0x48,
+	0xf7, 0xac, 0x7f, 0xe5, 0xef, 0x77, 0x9c, 0x3c, 0xfe, 0x3a, 0xdd, 0x6e, 0x57, 0xbb, 0x8d, 0xd8,
+	0xeb, 0xd8, 0x2d, 0x34, 0x4a, 0x06, 0x3d, 0x70, 0xe5, 0x72, 0x28, 0x96, 0xd4, 0xc1, 0x26, 0xd4,
+	0xe4, 0x72, 0xbe, 0xa0, 0xc4, 0x90, 0xa3, 0x49, 0x30, 0x9a, 0xd1, 0x0a, 0xfb, 0x24, 0xd0, 0x8c,
+	0x44, 0x28, 0x8d, 0x0f, 0x7b, 0x50, 0x37, 0x0b, 0x8a, 0xdc, 0xa6, 0xff, 0x48, 0xb2, 0x02, 0xbf,
+	0xc8, 0x12, 0x69, 0x05, 0xa2, 0x14, 0xb2, 0x09, 0x78, 0x47, 0x12, 0x5b, 0xd0, 0x30, 0x09, 0x8b,
+	0x60, 0x4c, 0x1d, 0x03, 0x44, 0xc4, 0xf9, 0x94, 0x3f, 0x50, 0x62, 0xb2, 0xc7, 0x73, 0x1e, 0xd0,
+	0x8a, 0xa1, 0x23, 0x3e, 0xe3, 0xf3, 0x47, 0x4e, 0xab, 0x08, 0x50, 0xbf, 0x1f, 0x4e, 0xc3, 0x60,
+	0x4c, 0x6b, 0xec, 0x09, 0x9a, 0x32, 0xd6, 0x8a, 0xa7, 0x1b, 0x85, 0x6d, 0x68, 0xe4, 0xb1, 0x56,
+	0xa7, 0x3b, 0x1c, 0x20, 0xde, 0x00, 0xe8, 0x4c, 0x29, 0xa9, 0xb3, 0x78, 0xf7, 0x62, 0x0f, 0xe2,
+	0x89, 0x6f, 0x0c, 0x5e, 0x1e, 0x2b, 0x54, 0xed, 0x5b, 0x89, 0xfa, 0x29, 0xb8, 0x23, 0xd3, 0x05,
+	0x7b, 0xe0, 0xd9, 0xc1, 0x64, 0xe1, 0xc5, 0x9f, 0x53, 0x5e, 0x9f, 0xff, 0xea, 0xcc, 0x1c, 0x1c,
+	0x40, 0xcb, 0x5a, 0x84, 0xca, 0x8b, 0x44, 0xff, 0x67, 0x3a, 0x14, 0x60, 0xce, 0x73, 0xdd, 0x7e,
+	0xf1, 0xe0, 0x2b, 0x00, 0x00, 0xff, 0xff, 0xc8, 0xf2, 0x08, 0x78, 0xf1, 0x01, 0x00, 0x00,
 }

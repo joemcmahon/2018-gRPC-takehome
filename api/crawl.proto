@@ -8,8 +8,10 @@ message URLRequest {
     enum command {
         // URLs in STOPPED, NONE, or DONE may be started.
         START = 0;
-        // URLS in CRAWLING, STOPPED, or DONE may be stopped.
+        // URLs in CRAWLING, STOPPED, or DONE may be stopped.
         STOP = 1;
+        // URLs in any state may be checked.
+        CHECK = 2;
     }
 	string URL = 1;
     command state = 2;
@@ -21,7 +23,7 @@ message URLState {
         STOPPED = 0;  // Crawler has stopped crawling this URL.
                       // START for a STOPPED URL resumes the crawl.
                       // STOP for a STOPPED URL does nothing.
-        CRAWLING = 1; // Crawler is actively crawling this URL.
+        RUNNING = 1;  // Crawler is actively crawling this URL.
                       // Once it completes the crawl, it switches
                       // the URL's state to DONE. START for a 
                       // CRAWLING URL is a no-op. STOP for a CRAWLING
@@ -31,11 +33,12 @@ message URLState {
                       // URL, it discards the crawl history and 
                       // crawls it again. If it receives a STOP, it
                       // does nothing.
-        NEVER = 3;    // Crawler has never seen this URL before.
+        UNKNOWN = 3;  // Crawler has never seen this URL before.
                       // This is a meta-state; URLs never crawled
                       // are not recorded in the client to avoid a
                       // possible DoS from a clog of never-crawled URLs.
                       // Only returned for a STOP.
+        FAILED = 4;   // Crawl failed for some reason. 
     }
     urlStatus status = 1;
 }
@@ -48,16 +51,17 @@ message URLState {
 // with the siteURL "all://".
 message SiteNode {
     string siteURL = 1;
-    repeated SiteNode children = 2;
+    string treeString = 2;
+    string status = 3;
 }
 
 service Crawl {
     // Because we're calling the client from our CLI, we
     // want the CrawlSite API to make a single request
-    // and wait for the response.
+    // and wait for the response. This API lets us start,
+    // stop, or check the status of a URL
     rpc CrawlSite (URLRequest) returns (URLState) {}
-    // I'm defining this this way so that if I'm mistaken and
-    // I have to create a stream of SiteNode messages to
-    // successfully return all the crawls, this will still work.
-    rpc URLStatus (URLRequest) returns (stream SiteNode) {}
+    // Checks the current status of a crawl and returns
+    // the tree as it stands.
+    rpc CrawlResult (URLRequest) returns (SiteNode) {}
 }
