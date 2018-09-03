@@ -1,0 +1,63 @@
+syntax = "proto3";
+package crawl;
+
+// URLRequest defines the outgoing request.
+// We can provide a URL and the state we want the client
+// to put it in.
+message URLRequest {
+    enum command {
+        // URLs in STOPPED, NONE, or DONE may be started.
+        START = 0;
+        // URLS in CRAWLING, STOPPED, or DONE may be stopped.
+        STOP = 1;
+    }
+	string URL = 1;
+    command state = 2;
+}
+
+// URLState reports the crawl status ONLY of a URL.
+message URLState {
+    enum urlStatus {
+        STOPPED = 0;  // Crawler has stopped crawling this URL.
+                      // START for a STOPPED URL resumes the crawl.
+                      // STOP for a STOPPED URL does nothing.
+        CRAWLING = 1; // Crawler is actively crawling this URL.
+                      // Once it completes the crawl, it switches
+                      // the URL's state to DONE. START for a 
+                      // CRAWLING URL is a no-op. STOP for a CRAWLING
+                      // URL saves the URL's state and sets it to STOPPED.
+        DONE = 2;     // Crawler has completed a crawl for this URL.
+                      // If the crawler receives a START for a DONE
+                      // URL, it discards the crawl history and 
+                      // crawls it again. If it receives a STOP, it
+                      // does nothing.
+        NEVER = 3;    // Crawler has never seen this URL before.
+                      // This is a meta-state; URLs never crawled
+                      // are not recorded in the client to avoid a
+                      // possible DoS from a clog of never-crawled URLs.
+                      // Only returned for a STOP.
+    }
+    urlStatus status = 1;
+}
+
+// SiteNode is returned in response to a STATUS request.
+// It returns a tree of sitenodes found under the current
+// URL (which may recursively contain more SiteNodes).
+// If no URL is supplied, all the SiteNodes the crawler
+// knows about are returned as the children of a SiteNode
+// with the siteURL "all://".
+message SiteNode {
+    string siteURL = 1;
+    repeated SiteNode children = 2;
+}
+
+service Crawl {
+    // Because we're calling the client from our CLI, we
+    // want the CrawlSite API to make a single request
+    // and wait for the response.
+    rpc CrawlSite (URLRequest) returns (URLState) {}
+    // I'm defining this this way so that if I'm mistaken and
+    // I have to create a stream of SiteNode messages to
+    // successfully return all the crawls, this will still work.
+    rpc URLStatus (URLRequest) returns (stream SiteNode) {}
+}
