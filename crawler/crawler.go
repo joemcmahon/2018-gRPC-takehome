@@ -19,6 +19,8 @@ type State struct {
 	tree    *gotree.Tree
 	fetcher Fetcher
 	debug   bool
+	done    bool
+	failed  bool
 	sync.Mutex
 }
 
@@ -112,6 +114,28 @@ func Debug(state bool) {
 	}
 }
 
+// Stop temporarily halts the crawl.
+func (state *State) Stop() {
+}
+
+// Start resumes the crawl. (Note that Run implies a Start.)
+func (state *State) Start() {
+}
+
+// IsDone lets external entites safely check to see if the crawl is done.
+func (state *State) IsDone() bool {
+	state.Lock()
+	defer (state.Unlock)()
+	return state.done
+}
+
+// HasFailed lets external entities see if the crawl failed.
+func (state *State) HasFailed() bool {
+	state.Lock()
+	defer (state.Unlock)()
+	return state.failed
+}
+
 // Format formats the crawl tree as it stands and returns it.
 func (state *State) Format() string {
 	if state == nil || state.tree == nil {
@@ -128,5 +152,24 @@ func (state *State) Run() {
 	//       check instead of depth check
 	// TODO: Have crawl do the worker state check on launch as in
 	// https://stackoverflow.com/questions/16101409/is-there-some-elegant-way-to-pause-resume-any-other-goroutine-in-golang
-	crawl(state.BaseURL, 4, state, state.tree)
+	Debug(true)
+
+	state.Lock()
+	state.done = false
+	state.failed = false
+	state.Unlock()
+	// Run the crawl asynchronously; when it terminates, set the done flag to true.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				state.Lock()
+				state.failed = true
+				state.Unlock()
+			}
+		}()
+		crawl(state.BaseURL, 4, state, state.tree)
+		state.Lock()
+		state.done = true
+		state.Unlock()
+	}()
 }
