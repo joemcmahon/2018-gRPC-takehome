@@ -14,11 +14,11 @@ import (
 // crawl anything; once the gRPC is working, we will add the
 // Crawler package to allow us to do actual crawling.
 
-// Define the crawler states we'll maintain.
-type crawlState int
+// CrawlState defines the crawler states we'll maintain.
+type CrawlState int
 
 const (
-	stopped crawlState = iota
+	stopped CrawlState = iota
 	running
 	done
 	unknown
@@ -29,20 +29,23 @@ const (
 type CrawlServer struct {
 	mutex sync.Mutex
 	// Crawler state for each URL
-	state map[string]crawlState
+	state map[string]CrawlState
 }
 
 // New creates and returns an empty CrawlServer.
 func New() *CrawlServer {
 	return &CrawlServer{
-		state: make(map[string]crawlState),
+		state: make(map[string]CrawlState),
 	}
 }
 
 // Start starts a crawl for a URL.
-func (c *CrawlServer) Start(url string) (string, error) {
+func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 	var status string
 	var err error
+
+	c.mutex.Lock()
+	defer (c.mutex.Unlock)()
 
 	if state, ok := c.state[url]; ok {
 		switch state {
@@ -68,13 +71,16 @@ func (c *CrawlServer) Start(url string) (string, error) {
 		c.state[url] = running
 	}
 	log.Infof(status)
-	return status, err
+	return status, c.state[url], err
 }
 
 // Stop stops a crawl for a URL.
-func (c *CrawlServer) Stop(url string) (string, error) {
+func (c *CrawlServer) Stop(url string) (string, CrawlState, error) {
 	var status string
 	var err error
+
+	c.mutex.Lock()
+	defer (c.mutex.Unlock)()
 
 	if state, ok := c.state[url]; ok {
 		switch state {
@@ -92,12 +98,15 @@ func (c *CrawlServer) Stop(url string) (string, error) {
 		status = changeState(url, translate(unknown), "stopped", "no action")
 	}
 	log.Infof(status)
-	return status, err
+	return status, c.state[url], err
 }
 
 // Done marks a crawl as done for a URL.
-func (c *CrawlServer) Done(url string) string {
+func (c *CrawlServer) Done(url string) (string, CrawlState) {
 	var status string
+
+	c.mutex.Lock()
+	defer (c.mutex.Unlock)()
 
 	if state, ok := c.state[url]; ok {
 		switch state {
@@ -111,12 +120,15 @@ func (c *CrawlServer) Done(url string) string {
 		status = changeState(url, translate(unknown), "done", "no action")
 	}
 	log.Infof(status)
-	return status
+	return status, c.state[url]
 }
 
 // Failed marks a crawl as failed for a URL.
-func (c *CrawlServer) Failed(url string) string {
+func (c *CrawlServer) Failed(url string) (string, CrawlState) {
 	var status string
+
+	c.mutex.Lock()
+	defer (c.mutex.Unlock)()
 
 	if state, ok := c.state[url]; ok {
 		switch state {
@@ -130,11 +142,14 @@ func (c *CrawlServer) Failed(url string) string {
 		status = changeState(url, translate(unknown), "failed", "no action")
 	}
 	log.Infof(status)
-	return status
+	return status, c.state[url]
 }
 
 // Probe checks the current state of a crawl without changing anything.
 func (c *CrawlServer) Probe(url string) string {
+	c.mutex.Lock()
+	defer (c.mutex.Unlock)()
+
 	if crawlerState, ok := c.state[url]; ok {
 		return translate(crawlerState)
 	}
@@ -149,10 +164,13 @@ func (c *CrawlServer) Probe(url string) string {
 // XXX: remember this needs the crawler semaphore to avoid data race
 //      issues.
 func (c *CrawlServer) Show(url string) string {
+	c.mutex.Lock()
+	defer (c.mutex.Unlock)()
+
 	return "(nothing to show yet)"
 }
 
-var xlate = map[crawlState]string{
+var xlate = map[CrawlState]string{
 	stopped: "stopped",
 	running: "running",
 	done:    "done",
@@ -160,7 +178,7 @@ var xlate = map[crawlState]string{
 	failed:  "failed",
 }
 
-func translate(state crawlState) string {
+func translate(state CrawlState) string {
 	return xlate[state]
 }
 
@@ -171,15 +189,15 @@ func changeState(url, old, new, result string) string {
 // CrawlSite starts, stops, or checks the status of a site.
 func (c *CrawlServer) CrawlSite(ctx context.Context, req *crawl.URLRequest) (*crawl.URLState, error) {
 	var status string
-	var state crawlState
+	var state CrawlState
 	var err error
 
 	switch req.State {
 	case crawl.URLRequest_START:
-		status, err = c.Start(req.URL)
+		status, state, err = c.Start(req.URL)
 
 	case crawl.URLRequest_STOP:
-		status, err = c.Start(req.URL)
+		status, state, err = c.Stop(req.URL)
 
 	case crawl.URLRequest_CHECK:
 		status = c.Probe(req.URL)
@@ -192,7 +210,7 @@ func (c *CrawlServer) CrawlSite(ctx context.Context, req *crawl.URLRequest) (*cr
 	return &s, err
 }
 
-var sendable = map[crawlState]crawl.URLState_Status{
+var sendable = map[CrawlState]crawl.URLState_Status{
 	stopped: crawl.URLState_STOPPED,
 	running: crawl.URLState_RUNNING,
 	done:    crawl.URLState_DONE,
@@ -200,7 +218,7 @@ var sendable = map[crawlState]crawl.URLState_Status{
 	failed:  crawl.URLState_FAILED,
 }
 
-func sendableState(state crawlState) crawl.URLState_Status {
+func sendableState(state CrawlState) crawl.URLState_Status {
 	return sendable[state]
 }
 

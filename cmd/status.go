@@ -21,10 +21,13 @@
 package cmd
 
 import (
-	"fmt"
-
+	pb "github.com/joemcmahon/joe_macmahon_technical_test/api/crawl"
 	"github.com/spf13/cobra"
 )
+
+const statusUsage = `Usage: crawl status <url>
+
+Returns the status of the crawl for this URL.`
 
 // statusCmd represents the status command
 var statusCmd = &cobra.Command{
@@ -33,7 +36,7 @@ var statusCmd = &cobra.Command{
 	Long: `Lists all crawls currently added and their status (stopped,
 crawling, or complete).`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("status called")
+		send(args, statusUsage, pb.URLRequest_CHECK, "status")
 	},
 }
 

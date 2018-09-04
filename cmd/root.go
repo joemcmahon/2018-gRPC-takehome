@@ -21,13 +21,42 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
+	"github.com/joemcmahon/joe_macmahon_technical_test/api/client"
+	pb "github.com/joemcmahon/joe_macmahon_technical_test/api/crawl"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
+
+// Global constants for all commands
+const addr = "127.0.0.1:10000"
+
+// Global functions for all commands
+func send(args []string, usage string, what pb.URLRequestCommand, action string) {
+	if len(args) == 0 {
+		fmt.Println(usage)
+		return
+	}
+	url := args[0]
+
+	c := Client.New(addr)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req := pb.URLRequest{URL: url, State: what}
+	state, err := c.CrawlSite(ctx, &req)
+	if err != nil {
+		fmt.Println("Failed to %s crawl: %s", action, err.Error())
+		return
+	}
+	fmt.Println(state.Status.String(), state.Message)
+}
 
 var cfgFile string
 

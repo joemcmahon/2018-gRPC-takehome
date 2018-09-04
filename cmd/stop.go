@@ -21,10 +21,14 @@
 package cmd
 
 import (
-	"fmt"
-
+	pb "github.com/joemcmahon/joe_macmahon_technical_test/api/crawl"
 	"github.com/spf13/cobra"
 )
+
+const stopUsage = `Usage client stop <url>
+
+Pauses a crawl on the supplied URL; the URL is required.
+`
 
 // stopCmd represents the stop command
 var stopCmd = &cobra.Command{
@@ -33,7 +37,7 @@ var stopCmd = &cobra.Command{
 	Long: `Tells the crawler to stop crawling URLs for the specified
 base URL. No-op if the URL is not being crawled.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("stop called")
+		send(args, stopUsage, pb.URLRequest_STOP, "stop")
 	},
 }
 
