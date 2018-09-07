@@ -8,6 +8,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func init() {
+	log.SetLevel(log.DebugLevel)
+}
+
 // State is the current state of the crawler.
 type State struct {
 	BaseURL string
