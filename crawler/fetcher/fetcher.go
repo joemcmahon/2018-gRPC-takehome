@@ -1,14 +1,10 @@
 package Fetcher
 
 import (
-	"bytes"
-	"fmt"
-	"io"
-	"io/ioutil"
-	"net/http"
 	"net/url"
 
-	"golang.org/x/net/html"
+	"github.com/gocolly/colly"
+	log "github.com/sirupsen/logrus"
 )
 
 // Fetcher is a URL fetcher that takes a URL (as a string),
@@ -26,46 +22,33 @@ func New() *Fetcher {
 
 // Fetch actually does all the work.
 func (m *Fetcher) Fetch(URL string) (string, []string, error) {
-	_, err := url.Parse(URL)
+	u, err := url.Parse(URL)
 	links := []string{}
 	if err != nil {
 		return "", links, err
 	}
 
-	page, err := http.Get(URL)
-	if err != nil {
-		return "", links, err
-	}
+	var text string
 
-	defer page.Body.Close()
-	var buf bytes.Buffer
-	tee := io.TeeReader(page.Body, &buf)
-	text, err := ioutil.ReadAll(tee)
+	// Set up scraper
+	c := colly.NewCollector(
+		colly.AllowedDomains(u.Host),
+	)
 
-	if page.StatusCode >= 400 {
-		return string(text), links, fmt.Errorf("%s %d", URL, page.StatusCode)
-	}
-
-	doc, err := html.Parse(page.Body)
-	if err != nil {
-		return string(text), links, fmt.Errorf("failed to parse: %v", err)
-	}
-
-	var f func(n *html.Node)
-	f = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "a" {
-			for _, a := range n.Attr {
-				if a.Key == "href" {
-					links = append(links, a.Val)
-					break
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			f(c)
-		}
-	}
-	f(doc)
+	// Capture all the body text
+	c.OnHTML("body", func(e *colly.HTMLElement) {
+		text = e.Text
+	})
+	// Extract links
+	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
+		links = append(links, e.Attr("href"))
+	})
+	// Log a debug message for each page visit
+	c.OnRequest(func(r *colly.Request) {
+		log.Debugf("VISIT> %s", r.URL.String())
+	})
+	// Actually do it.
+	c.Visit(URL)
 
 	return string(text), links, nil
 }
