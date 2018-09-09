@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"net"
+	"os"
 
 	pb "github.com/joemcmahon/joe_macmahon_technical_test/api/crawl"
 	"github.com/joemcmahon/joe_macmahon_technical_test/api/server"
 	"github.com/joemcmahon/joe_macmahon_technical_test/testdata"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -18,6 +19,7 @@ var (
 	certFile = flag.String("tls_cert_file", "", "The TLS cert file")
 	keyFile  = flag.String("tls_key_file", "", "The TLS key file")
 	port     = flag.Int("port", 10000, "The server port")
+	debug    = flag.Bool("debug", false, "Turn on server debug")
 )
 
 func main() {
@@ -40,11 +42,14 @@ func main() {
 		}
 		opts = []grpc.ServerOption{grpc.Creds(creds)}
 	}
-	fmt.Println("starting server")
+	if *debug || os.Getenv("TESTING") != "" {
+		log.SetLevel(log.DebugLevel)
+	}
+	log.Debug("starting server")
 	grpcServer := grpc.NewServer(opts...)
-	fmt.Println("registering crawler")
+	log.Debug("registering crawler")
 	pb.RegisterCrawlServer(grpcServer, Server.New())
-	fmt.Println("ready")
+	log.Debug("ready")
 	grpcServer.Serve(lis)
-	fmt.Println("server terminated")
+	log.Debug("server terminated")
 }

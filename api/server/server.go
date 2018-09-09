@@ -68,16 +68,27 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 			status = changeState(url, "running", "running", "no action")
 		case done:
 			status = changeState(url, "done", "running", "last crawl discarded, restarting crawl")
-			newState.crawler.Run()
+			if newState.crawler != nil {
+				newState.crawler.Run()
+			} else {
+				f := MockFetcher.New()
+				c := Crawler.New(url, f)
+				newState.crawler = &c
+				c.Run()
+			}
 			newState.State = running
 		case stopped:
 			status = changeState(url, "stopped", "running", "resuming crawl")
-			newState.crawler.Start()
-			newState.State = running
+			if newState.crawler != nil {
+				newState.crawler.Start()
+				newState.State = running
+			}
 		case failed:
 			status = changeState(url, "failed", "running", "retrying crawl")
-			newState.crawler.Run()
-			newState.State = running
+			if newState.crawler != nil {
+				newState.crawler.Run()
+				newState.State = running
+			}
 		default:
 			// This would be an entry in state 'unknown', which should not be possible.
 			panic(changeState(url, "invalid state", "running", "panic!"))
@@ -108,14 +119,16 @@ func (c *CrawlServer) Stop(url string) (string, CrawlState, error) {
 
 	var newState CrawlControl
 	c.checkForCrawlDoneOrFailed(url)
-	if state, ok := c.state[url]; ok {
-		switch state.State {
+	if newState, ok := c.state[url]; ok {
+		switch newState.State {
 		case running:
 			status = changeState(url, "running", "stopped", "crawl paused")
 			newState.State = stopped
-			newState.crawler.Stop()
+			if newState.crawler != nil {
+				newState.crawler.Stop()
+			}
 		case done, stopped, failed:
-			status = changeState(url, translate(state.State), "stopped", "no action")
+			status = changeState(url, translate(newState.State), "stopped", "no action")
 		default:
 			// This would be an entry in state 'unknown', which should not be possible.
 			panic(changeState(url, "invalid state", "running", "panic!"))
@@ -124,6 +137,7 @@ func (c *CrawlServer) Stop(url string) (string, CrawlState, error) {
 		status = changeState(url, translate(unknown), "stopped", "no action")
 	}
 	log.Infof(status)
+	c.state[url] = newState
 	return status, c.state[url].State, err
 }
 
@@ -172,7 +186,7 @@ func (c *CrawlServer) Show(url string) string {
 		}
 	} else {
 		// Unknown, so we've done nothing with it.
-		return "%s has not been crawled"
+		return fmt.Sprintf("%s has not been crawled", url)
 	}
 	return display
 }
