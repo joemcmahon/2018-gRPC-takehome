@@ -14,7 +14,9 @@ import (
 
 const fourOhFour = "http://example.com\n"
 const knownURL = "http://golang.org/"
+const pureKnown = "http://www.golang.org/"
 const unknownURL = "http://example.com"
+const pureUnknown = "http://www.example.com/"
 const expectedStart = `http://golang.org/
 ├── http://golang.org/cmd/
 └── http://golang.org/pkg/`
