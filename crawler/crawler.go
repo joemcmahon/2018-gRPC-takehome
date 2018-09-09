@@ -193,14 +193,19 @@ func Debug(state bool) {
 	}
 }
 
-// Stop temporarily halts the crawl.
-func (state *State) Stop() {
-	log.Debug("stop attempted")
+// Pause temporarily halts the crawl.
+func (state *State) Pause() {
+	state.control <- Pause
 }
 
-// Start resumes the crawl. (Note that Run implies a Start.)
+// Start resumes the crawl.
 func (state *State) Start() {
-	log.Debug("start attempted")
+	state.control <- Run
+}
+
+// Stop cancels the crawl.
+func (state *State) Stop() {
+	state.control <- Stop
 }
 
 // IsDone lets external entites safely check to see if the crawl is done.

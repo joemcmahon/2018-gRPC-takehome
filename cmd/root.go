@@ -58,6 +58,27 @@ func send(args []string, usage string, what pb.URLRequestCommand, action string)
 	fmt.Println(state.Status.String(), state.Message)
 }
 
+func format(args []string, usage string) {
+	if len(args) == 0 {
+		fmt.Println(usage)
+		return
+	}
+	url := args[0]
+
+	c := Client.New(addr)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req := pb.URLRequest{URL: url, State: pb.URLRequest_SHOW}
+	state, err := c.CrawlResult(ctx, &req)
+	if err != nil {
+		fmt.Println("Failed to fetch status: %s", err.Error())
+		return
+	}
+	fmt.Println(state.TreeString)
+}
+
 var cfgFile string
 
 // rootCmd represents the base command when called without any subcommands

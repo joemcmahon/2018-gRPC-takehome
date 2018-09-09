@@ -21,19 +21,21 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
 // showCmd represents the show command
+const showUsage = `Usage: crawl show <url>
+
+Shows the formatted results of the crawl so far.`
+
 var showCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Show the crawl status and results for a URL",
 	Long: `Displays the current status of the crawl (stopped, running,
 complete) and displays the crawl tree if any.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("show called")
+		format(args, showUsage)
 	},
 }
 

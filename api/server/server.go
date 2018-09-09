@@ -159,11 +159,14 @@ func (c *CrawlServer) Show(url string) string {
 		switch state.State {
 		case running:
 			// Stop it, run the formatter, start it.
-			c.Stop(url)
-			display = "look! halted to show a formatted tree!"
-			c.Start(url)
+			// Note we don't have to lock it while formatting
+			// because the goroutine is paused, waiting for
+			// the Start() call to resume.
+			state.crawler.Pause()
+			display = state.crawler.Format()
+			state.crawler.Start()
 		case stopped, done:
-			display = "look! formatted the resulting tree!"
+			display = state.crawler.Format()
 		case failed:
 			display = "Crawl failed; no valid results to show"
 		}
@@ -217,9 +220,7 @@ func (c *CrawlServer) CrawlSite(ctx context.Context, req *crawl.URLRequest) (*cr
 var sendable = map[CrawlState]crawl.URLState_Status{
 	stopped: crawl.URLState_STOPPED,
 	running: crawl.URLState_RUNNING,
-	done:    crawl.URLState_DONE,
 	unknown: crawl.URLState_UNKNOWN,
-	failed:  crawl.URLState_FAILED,
 }
 
 func sendableState(state CrawlState) crawl.URLState_Status {
