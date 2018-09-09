@@ -259,7 +259,9 @@ func (state *State) Run() {
 	//       check instead of depth check
 	// TODO: Have crawl do the worker state check on launch as in
 	// https://stackoverflow.com/questions/16101409/is-there-some-elegant-way-to-pause-resume-any-other-goroutine-in-golang
-	Debug(true)
+	if os.Getenv("TESTING") != "" {
+		Debug(true)
+	}
 	if state == nil {
 		return
 	}

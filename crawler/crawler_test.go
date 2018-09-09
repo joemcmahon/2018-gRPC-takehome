@@ -14,9 +14,7 @@ import (
 
 const fourOhFour = "http://example.com\n"
 const knownURL = "http://golang.org/"
-const pureKnown = "http://www.golang.org/"
 const unknownURL = "http://example.com"
-const pureUnknown = "http://www.example.com/"
 const expectedStart = `http://golang.org/
 ├── http://golang.org/cmd/
 └── http://golang.org/pkg/`
@@ -44,7 +42,7 @@ var _ = Describe("crawler", func() {
 		testPrint(answer)
 		Context("scanning data we don't have", func() {
 			It("shows the empty tree as we expect it", func() {
-				Expect(answer).To(Equal("http://example.com\n"))
+				Expect(answer).To(Equal("http://example.com/\n"))
 			})
 		})
 	})
