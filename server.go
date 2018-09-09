@@ -8,6 +8,8 @@ import (
 
 	pb "github.com/joemcmahon/joe_macmahon_technical_test/api/crawl"
 	"github.com/joemcmahon/joe_macmahon_technical_test/api/server"
+	"github.com/joemcmahon/joe_macmahon_technical_test/crawler/fetcher"
+	"github.com/joemcmahon/joe_macmahon_technical_test/crawler/test/mock_fetcher"
 	"github.com/joemcmahon/joe_macmahon_technical_test/testdata"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -20,6 +22,7 @@ var (
 	keyFile  = flag.String("tls_key_file", "", "The TLS key file")
 	port     = flag.Int("port", 10000, "The server port")
 	debug    = flag.Bool("debug", false, "Turn on server debug")
+	mock     = flag.Bool("mock", false, "Use the mock fetcher for testing")
 )
 
 func main() {
@@ -42,14 +45,24 @@ func main() {
 		}
 		opts = []grpc.ServerOption{grpc.Creds(creds)}
 	}
-	if *debug || os.Getenv("TESTING") != "" {
+	if debugging() {
 		log.SetLevel(log.DebugLevel)
 	}
 	log.Debug("starting server")
 	grpcServer := grpc.NewServer(opts...)
 	log.Debug("registering crawler")
-	pb.RegisterCrawlServer(grpcServer, Server.New())
+	if *mock {
+		f := MockFetcher.New()
+		pb.RegisterCrawlServer(grpcServer, Server.New(f))
+	} else {
+		f := Fetcher.New()
+		pb.RegisterCrawlServer(grpcServer, Server.New(f))
+	}
 	log.Debug("ready")
 	grpcServer.Serve(lis)
 	log.Debug("server terminated")
+}
+
+func debugging() bool {
+	return *debug || os.Getenv("TESTING") != ""
 }

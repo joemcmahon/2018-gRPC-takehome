@@ -7,7 +7,6 @@ import (
 
 	"github.com/joemcmahon/joe_macmahon_technical_test/api/crawl"
 	"github.com/joemcmahon/joe_macmahon_technical_test/crawler"
-	"github.com/joemcmahon/joe_macmahon_technical_test/crawler/test/mock_fetcher"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -33,16 +32,25 @@ type CrawlControl struct {
 	crawler *Crawler.State
 }
 
+// Fetcher defines an interface that can fetch URLs.
+type Fetcher interface {
+	// Fetch returns the body of URL and
+	// a slice of URLs found on that page.
+	Fetch(url string) (body string, urls []string, err error)
+}
+
 // CrawlServer defines the struct that holds the status of crawls
 type CrawlServer struct {
 	mutex sync.Mutex
+	f     Fetcher
 	// Crawler state for each URL
 	state map[string]CrawlControl
 }
 
 // New creates and returns an empty CrawlServer.
-func New() *CrawlServer {
+func New(f Fetcher) *CrawlServer {
 	return &CrawlServer{
+		f:     f,
 		state: make(map[string]CrawlControl),
 	}
 }
@@ -71,8 +79,7 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 			if newState.crawler != nil {
 				newState.crawler.Run()
 			} else {
-				f := MockFetcher.New()
-				c := Crawler.New(url, f)
+				c := Crawler.New(url, c.f)
 				newState.crawler = &c
 				c.Run()
 			}
@@ -96,8 +103,7 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 	} else {
 		// Actually start a new crawl
 		log.Debug("Start crawl")
-		f := MockFetcher.New()
-		c := Crawler.New(url, f)
+		c := Crawler.New(url, c.f)
 		newState.crawler = &c
 		c.Run()
 		status = changeState(url, translate(unknown), "running", "starting crawl")
