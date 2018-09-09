@@ -2,6 +2,7 @@ package Crawler
 
 import (
 	"errors"
+	"os"
 	"sync"
 
 	"github.com/disiqueira/gotree"
@@ -9,7 +10,9 @@ import (
 )
 
 func init() {
-	log.SetLevel(log.DebugLevel)
+	if os.Getenv("TESTING") != "" {
+		log.SetLevel(log.DebugLevel)
+	}
 }
 
 // State is the current state of the crawler.
@@ -19,8 +22,8 @@ type State struct {
 	tree    *gotree.Tree
 	fetcher Fetcher
 	debug   bool
-	done    bool
-	failed  bool
+	done    chan bool
+	failed  chan bool
 	sync.Mutex
 }
 
@@ -101,6 +104,8 @@ func New(baseURL string, fetcher Fetcher) State {
 		BaseURL: baseURL,
 		cache:   make(map[string]error),
 		fetcher: fetcher,
+		done:    make(chan bool),
+		failed:  make(chan bool),
 	}
 	return s
 }
@@ -116,24 +121,52 @@ func Debug(state bool) {
 
 // Stop temporarily halts the crawl.
 func (state *State) Stop() {
+	log.Debug("stop attempted")
 }
 
 // Start resumes the crawl. (Note that Run implies a Start.)
 func (state *State) Start() {
+	log.Debug("start attempted")
 }
 
 // IsDone lets external entites safely check to see if the crawl is done.
 func (state *State) IsDone() bool {
 	state.Lock()
 	defer (state.Unlock)()
-	return state.done
+	if state == nil {
+		return false
+	}
+	log.Debug("check if done")
+	select {
+	case <-state.done:
+		log.Debug("done")
+		return true
+	case <-state.failed:
+		log.Debug("failed, force done")
+		state.failed <- true
+		return true
+	default:
+		log.Debug("not done")
+		return false
+	}
 }
 
 // HasFailed lets external entities see if the crawl failed.
 func (state *State) HasFailed() bool {
 	state.Lock()
 	defer (state.Unlock)()
-	return state.failed
+	if state == nil {
+		return false
+	}
+	log.Debug("check if failed")
+	select {
+	case <-state.failed:
+		log.Debug("failed")
+		return true
+	default:
+		log.Debug("still ok")
+		return false
+	}
 }
 
 // Format formats the crawl tree as it stands and returns it.
@@ -153,23 +186,20 @@ func (state *State) Run() {
 	// TODO: Have crawl do the worker state check on launch as in
 	// https://stackoverflow.com/questions/16101409/is-there-some-elegant-way-to-pause-resume-any-other-goroutine-in-golang
 	Debug(true)
-
-	state.Lock()
-	state.done = false
-	state.failed = false
-	state.Unlock()
+	if state == nil {
+		panic("State is not set up")
+	}
 	// Run the crawl asynchronously; when it terminates, set the done flag to true.
+	log.Debug("launch crawl")
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				state.Lock()
-				state.failed = true
-				state.Unlock()
+				log.Debug("crawl panicked:", r)
+				state.failed <- true
 			}
 		}()
 		crawl(state.BaseURL, 4, state, state.tree)
-		state.Lock()
-		state.done = true
-		state.Unlock()
+		log.Debug("Crawl complete")
+		state.done <- true
 	}()
 }

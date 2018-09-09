@@ -12,6 +12,8 @@ message URLRequest {
         STOP = 1;
         // URLs in any state may be checked.
         CHECK = 2;
+        // We have to stop, show, then start again.
+        SHOW = 3;
     }
 	string URL = 1;
     command state = 2;

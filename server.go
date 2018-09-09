@@ -40,7 +40,11 @@ func main() {
 		}
 		opts = []grpc.ServerOption{grpc.Creds(creds)}
 	}
+	fmt.Println("starting server")
 	grpcServer := grpc.NewServer(opts...)
+	fmt.Println("registering crawler")
 	pb.RegisterCrawlServer(grpcServer, Server.New())
+	fmt.Println("ready")
 	grpcServer.Serve(lis)
+	fmt.Println("server terminated")
 }

@@ -54,10 +54,14 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 
 	c.mutex.Lock()
 	defer (c.mutex.Unlock)()
+	log.Debug("selecting command")
 
 	var newState CrawlControl
+	log.Debug("Checking for over")
 	c.checkForCrawlDoneOrFailed(url)
+	log.Debug("not over")
 	if state, ok := c.state[url]; ok {
+		log.Debug("executing for", url)
 		newState := state
 		switch state.State {
 		case running:
@@ -80,13 +84,16 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 		}
 	} else {
 		// Actually start a new crawl
+		log.Debug("Start crawl")
 		f := MockFetcher.New()
 		c := Crawler.New(url, f)
 		newState.crawler = &c
+		c.Run()
 		status = changeState(url, translate(unknown), "running", "starting crawl")
 		newState.State = running
 	}
 	c.state[url] = newState
+	log.Debug("updating to", newState)
 	log.Infof(status)
 	return status, c.state[url].State, err
 }
@@ -120,65 +127,14 @@ func (c *CrawlServer) Stop(url string) (string, CrawlState, error) {
 	return status, c.state[url].State, err
 }
 
-// Done marks a crawl as done for a URL.The Crawler will be given a pointer to
-// the CrawlServer so that it can call Done when it finishes.
-func (c *CrawlServer) Done(url string) (string, CrawlState) {
-	var status string
-
-	c.mutex.Lock()
-	defer (c.mutex.Unlock)()
-
-	var newState CrawlControl
-	c.checkForCrawlDoneOrFailed(url)
-	if state, ok := c.state[url]; ok {
-		switch state.State {
-		case running:
-			status = changeState(url, "running", "done", "recording completed crawl")
-			newState.State = done
-		default:
-			status = changeState(url, translate(state.State), "done", "no action")
-		}
-	} else {
-		status = changeState(url, translate(unknown), "done", "no action")
-	}
-	log.Infof(status)
-	c.state[url] = newState
-	return status, c.state[url].State
-}
-
-// Failed marks a crawl as failed for a URL. Also a callback from Run, but handled
-// by a panic trap.
-func (c *CrawlServer) Failed(url string) (string, CrawlState) {
-	var status string
-
-	c.mutex.Lock()
-	defer (c.mutex.Unlock)()
-
-	var newState CrawlControl
-	c.checkForCrawlDoneOrFailed(url)
-	if state, ok := c.state[url]; ok {
-		switch state.State {
-		case running:
-			status = changeState(url, translate(state.State), "failed", "marked failed")
-			newState.State = failed
-		default:
-			status = changeState(url, translate(state.State), "failed", "no action")
-		}
-	} else {
-		// This would be an entry in state 'unknown', which should not be possible.
-		panic(changeState(url, "invalid state", "failed", "panic!"))
-	}
-	log.Infof(status)
-	c.state[url] = newState
-	return status, c.state[url].State
-}
-
 // Probe checks the current state of a crawl without changing anything.
 func (c *CrawlServer) Probe(url string) string {
 	c.mutex.Lock()
 	defer (c.mutex.Unlock)()
 
+	log.Debug("probe state")
 	c.checkForCrawlDoneOrFailed(url)
+	log.Debug("not failed")
 	if crawlerState, ok := c.state[url]; ok {
 		return translate(crawlerState.State)
 	}
@@ -195,7 +151,9 @@ func (c *CrawlServer) Show(url string) string {
 	defer (c.mutex.Unlock)()
 
 	var display string
+	log.Debug("check state")
 	c.checkForCrawlDoneOrFailed(url)
+	log.Debug("not done")
 
 	if state, ok := c.state[url]; ok {
 		switch state.State {
