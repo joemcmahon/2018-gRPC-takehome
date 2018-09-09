@@ -2,6 +2,7 @@ package Crawler
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"sync"
 
@@ -19,6 +20,7 @@ func init() {
 // State is the current state of the crawler.
 type State struct {
 	BaseURL  string
+	domain   string
 	cache    map[string]error
 	tree     *gotree.Tree
 	fetcher  Fetcher
@@ -39,6 +41,9 @@ type Fetcher interface {
 
 // Use this value to mark a URL as busy in the URL cache.
 var errLoading = errors.New("url load in progress")
+
+// Use this value to mark a URL as leading offsite
+var errOffsite = errors.New("url points offsite")
 
 // Run denotes the state in which we're actively crawling.
 const Run = 0
@@ -81,10 +86,11 @@ func (state *State) stoppedOrCrawling() int {
 	}
 }
 
-// crawl uses Fetcher to recursively crawl
-// pages starting with url, to a maximum of depth.
-func (state *State) crawl(url string, depth int, current *gotree.Tree) {
-	// record url under current SiteTree. If none exists, create.
+// crawl uses Fetcher to recursively crawl pages starting with URL.
+// Once all links that point to the same domain as the initial URL
+// have been visited, crawling stops.
+func (state *State) crawl(URL string, current *gotree.Tree) {
+	// record URL under current SiteTree. If none exists, create.
 	// If we detect that we're paused inside stoppedOrCrawling(), we
 	// won't exit it until we are moved to stopped or running.
 	log.Debug("Checking run state")
@@ -95,71 +101,102 @@ func (state *State) crawl(url string, depth int, current *gotree.Tree) {
 		return
 	}
 
-	// Otherwise, we're running. Record this one in the tree.
-	log.Debug("crawl running for ", url)
+	// Skip empty links.
+	if URL == "" {
+		return
+	}
 
+	// Otherwise, we're running. Record this one in the tree.
+	log.Debug("crawl running for ", URL)
+
+	// See if this URL is valid.
+	u, err := url.Parse(URL)
+	if err != nil {
+		state.Lock()
+		state.cache[URL] = err
+		state.Unlock()
+		log.Debugf("Invalid URL %s: %s", URL, err.Error())
+	}
+
+	// We want to record the link, even if it's bad.
 	state.Lock()
 	var newT gotree.Tree
 	if current == nil {
 		// Tree's empty; build a new one.
-		newT = gotree.New(url)
+		newT = gotree.New(URL)
 		current = &newT
 		state.tree = current
 	} else {
 		// Add this URL under the current node.
-		newT = (*current).Add(url)
+		newT = (*current).Add(URL)
 	}
-	state.Unlock()
-
-	// See if this URL goes offsite.
-	if depth <= 0 {
-		log.Debugf("<- Done with %v, depth 0.\n", url)
-		return
-	}
-
-	state.Lock()
-	if _, ok := state.cache[url]; ok {
-		state.Unlock()
-		log.Debugf("<- Done with %v, already fetched.\n", url)
-		return
-	}
-	// We mark the url to be loading to avoid others reloading it at the same time.
-	state.cache[url] = errLoading
-	state.Unlock()
-
-	// We load it concurrently.
-	body, urls, err := state.fetcher.Fetch(url)
-
-	// And update the status in a synced zone.
-	state.Lock()
-	state.cache[url] = err
 	state.Unlock()
 
 	if err != nil {
-		log.Debugf("<- Error on %v: %v\n", url, err)
+		// Recorded. No further action.
 		return
 	}
-	log.Debugf("Found: %s %q\n", url, body)
+
+	// Relative URLs are still on this domain. Make it so.
+	if string(URL[0]) == "/" {
+		// Make the next test know it lives here.
+		u.Host = state.domain
+		URL = u.String()
+		URL, _ = purify(URL)
+	}
+
+	// Are we off our domain?
+	if u.Host != state.domain {
+		state.Lock()
+		state.cache[URL] = errOffsite
+		state.Unlock()
+		log.Debugf("Offsite URL %s", URL)
+		return
+	}
+
+	state.Lock()
+	if _, ok := state.cache[URL]; ok {
+		state.Unlock()
+		log.Debugf("<- Done with %v, already fetched.\n", URL)
+		return
+	}
+	// We mark the URL to be loading to avoid others reloading it at the same time.
+	state.cache[URL] = errLoading
+	state.Unlock()
+
+	// We load it concurrently.
+	body, urls, err := state.fetcher.Fetch(URL)
+
+	// And update the status in a synced zone.
+	state.Lock()
+	state.cache[URL] = err
+	state.Unlock()
+
+	if err != nil {
+		log.Debugf("<- Error on %v: %v\n", URL, err)
+		return
+	}
+	log.Debugf("Found: %s %q\n", URL, body)
 	done := make(chan bool)
 	for i, u := range urls {
 		// Ignoring the error because fetched URLs should already be
 		// valid URLs of some sort.
 		u, _ = purify(u)
-		log.Debugf("-> Crawling child %v/%v of %v : %v.\n", i, len(urls), url, u)
-		go func(url string) {
-			state.crawl(url, depth-1, &newT)
+		log.Debugf("-> Crawling child %v/%v of %v : %v.\n", i, len(urls), URL, u)
+		go func(URL string) {
+			state.crawl(URL, &newT)
 			done <- true
 		}(u)
 	}
 	for i := range urls {
-		log.Debugf("<- [%v] %v/%v Waiting for child\n", url, i, len(urls))
+		log.Debugf("<- [%v] %v/%v Waiting for child\n", URL, i, len(urls))
 		<-done
 	}
-	log.Debugf("<- Done with %v\n", url)
+	log.Debugf("<- Done with %v\n", URL)
 }
 
-func purify(url string) (string, error) {
-	return purell.NormalizeURLString(url,
+func purify(URL string) (string, error) {
+	return purell.NormalizeURLString(URL,
 		purell.FlagsAllNonGreedy&^purell.FlagRemoveDirectoryIndex&^purell.FlagForceHTTP&^purell.FlagAddWWW)
 }
 
@@ -181,6 +218,9 @@ func New(baseURL string, fetcher Fetcher) State {
 		s.failed <- true
 		s.done <- true
 	}
+	// purify() will have returned a valid URL.
+	u, _ := url.Parse(baseURL)
+	s.domain = u.Host
 	return s
 }
 
@@ -260,10 +300,6 @@ func (state *State) Format() string {
 // Run takes a URL and a Fetcher to fetch URLs, crawls the tree,
 // holding the crawl state in the State pointer passed in.
 func (state *State) Run() {
-	// TODO: add purell to canonicize URLs, extract domain for regex
-	//       check instead of depth check
-	// TODO: Have crawl do the worker state check on launch as in
-	// https://stackoverflow.com/questions/16101409/is-there-some-elegant-way-to-pause-resume-any-other-goroutine-in-golang
 	if os.Getenv("TESTING") != "" {
 		Debug(true)
 	}
@@ -279,7 +315,7 @@ func (state *State) Run() {
 			}
 		}()
 		log.Debug("launch crawl")
-		state.crawl(state.BaseURL, 4, state.tree)
+		state.crawl(state.BaseURL, state.tree)
 		log.Debug("Crawl complete")
 		state.done <- true
 	}()
