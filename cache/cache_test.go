@@ -22,7 +22,7 @@ func init() {
 	}
 }
 
-var _ = Describe("", func() {
+var _ = Describe("cache", func() {
 	Describe("add", func() {
 		Context("add two different items", func() {
 			BeforeEach(func() {
