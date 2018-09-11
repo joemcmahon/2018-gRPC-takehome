@@ -28,23 +28,10 @@ var _ = Describe("cache", func() {
 			BeforeEach(func() {
 				c = New()
 				c.Run()
-				clear := Op{
-					Clear: true,
-				}
-				c.Work <- clear
-				add := Op{
-					Add:   true,
-					Key:   "alpha",
-					Value: fmt.Errorf("one"),
-				}
-				c.Work <- add
-				add = Op{
-					Add:   true,
-					Key:   "beta",
-					Value: fmt.Errorf("two"),
-				}
-				c.Work <- add
-				c.Quit <- true
+				c.Clear()
+				c.Add("alpha", fmt.Errorf("one"))
+				c.Add("beta", fmt.Errorf("two"))
+				c.Quit()
 			})
 			It("added the items", func() {
 				// Can whitebox because we're in the same package
@@ -58,23 +45,10 @@ var _ = Describe("cache", func() {
 			BeforeEach(func() {
 				c = New()
 				c.Run()
-				clear := Op{
-					Clear: true,
-				}
-				c.Work <- clear
-				add := Op{
-					Add:   true,
-					Key:   "alpha",
-					Value: fmt.Errorf("one"),
-				}
-				c.Work <- add
-				add = Op{
-					Add:   true,
-					Key:   "alpha",
-					Value: fmt.Errorf("two"),
-				}
-				c.Work <- add
-				c.Quit <- true
+				c.Clear()
+				c.Add("alpha", fmt.Errorf("one"))
+				c.Add("alpha", fmt.Errorf("two"))
+				c.Quit()
 			})
 			It("added only one item", func() {
 				keys := reflect.ValueOf(c.urls).MapKeys()
@@ -87,45 +61,16 @@ var _ = Describe("cache", func() {
 		BeforeEach(func() {
 			c = New()
 			c.Run()
-			clear := Op{
-				Clear: true,
-			}
-			c.Work <- clear
-			add := Op{
-				Add:   true,
-				Key:   "gamma",
-				Value: fmt.Errorf("three"),
-			}
-			c.Work <- add
+			c.Clear()
+			c.Add("gamma", fmt.Errorf("three"))
 		})
-		It("sends back false for items not there", func() {
-			z := make(chan bool)
-			query := Op{
-				Test:    true,
-				Key:     "delta",
-				InCache: z,
-			}
-			c.Work <- query
-			there := <-z
-			Expect(there).To(BeFalse())
-		})
-		It("sends back true for items that are there", func() {
-			z := make(chan bool)
-			query := Op{
-				Test:    true,
-				Key:     "gamma",
-				InCache: z,
-			}
-			c.Work <- query
-			there := <-z
-			Expect(there).To(BeTrue())
+		It("sends back the right answers", func() {
+			Expect(c.Check("delta")).To(BeFalse())
+			Expect(c.Check("gamma")).To(BeTrue())
+			c.Quit()
 		})
 	})
 })
-
-var _ = func() {
-	c.Quit <- true
-}
 
 func TestThings(t *testing.T) {
 	RegisterFailHandler(Fail)
