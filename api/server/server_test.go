@@ -3,6 +3,7 @@ package Server
 import (
 	"testing"
 
+	"github.com/joemcmahon/joe_macmahon_technical_test/crawler/test/mock_fetcher"
 	"github.com/joemcmahon/logcap"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -12,7 +13,8 @@ const example = "https://www.example.com"
 const missing = "http://missing.org"
 
 var _ = Describe("matches logs", func() {
-	s := New()
+	f := MockFetcher.New()
+	s := New(f)
 	Context("running", func() {
 		It("tries change running to stopped", func() {
 			s.state[example] = CrawlControl{State: running}

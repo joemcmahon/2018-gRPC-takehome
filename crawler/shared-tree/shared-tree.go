@@ -20,10 +20,10 @@ type formatReq struct {
 	response chan string
 }
 
-// SharedTree represents the tree management process itself. Send
+// Tree represents the tree management process itself. Send
 // items to Tree.Add; send formatting requests to Format; send true
 // to Tree.Quit to stop the process.
-type SharedTree struct {
+type Tree struct {
 	tree   *gotree.Tree
 	add    chan addition
 	format chan formatReq
@@ -31,20 +31,20 @@ type SharedTree struct {
 }
 
 // New creates a new tree.
-func New() SharedTree {
+func New() Tree {
 	// Create and return the cache.
-	worker := SharedTree{
+	t := Tree{
 		tree:   nil,
 		add:    make(chan addition),
 		format: make(chan formatReq),
 		quit:   make(chan bool)}
 
-	return worker
+	return t
 }
 
 // Run runs the tree. We wait for work on our work queue, execute
 // it, and wait for more work
-func (t *SharedTree) Run() {
+func (t *Tree) Run() {
 	go func() {
 		for {
 			select {
@@ -74,7 +74,7 @@ func (t *SharedTree) Run() {
 // AddAt inserts a new item at the specified insert point and
 // returns the new item as an insert point. This allows us to
 // build trees downward from the root.
-func (t *SharedTree) AddAt(point *gotree.Tree, s string) *gotree.Tree {
+func (t *Tree) AddAt(point *gotree.Tree, s string) *gotree.Tree {
 	a := addition{
 		item:        s,
 		insertPoint: point,
@@ -86,11 +86,11 @@ func (t *SharedTree) AddAt(point *gotree.Tree, s string) *gotree.Tree {
 }
 
 // Format returns a formatted version of the tree, using gotree's Print().
-func (t *SharedTree) Format() string {
+func (t *Tree) Format() string {
 	return (*t.tree).Print()
 }
 
 // Quit stops the process.
-func (t *SharedTree) Quit() {
+func (t *Tree) Quit() {
 	t.quit <- true
 }

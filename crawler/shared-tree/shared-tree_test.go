@@ -22,7 +22,7 @@ const expected = `root
 
 var _ = Describe("shared tree", func() {
 	Context("Insert into empty tree", func() {
-		var t SharedTree
+		var t Tree
 		BeforeEach(func() {
 			t = New()
 			t.Run()
@@ -35,7 +35,7 @@ var _ = Describe("shared tree", func() {
 			Expect((*t.tree).Print()).To(Equal("root\n"))
 		})
 		Context("insert multiple items", func() {
-			var t SharedTree
+			var t Tree
 			var answer string
 			BeforeEach(func() {
 				t = New()
