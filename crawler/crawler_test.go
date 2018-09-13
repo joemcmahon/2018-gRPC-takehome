@@ -1,4 +1,4 @@
-package Crawler
+package crawler
 
 import (
 	"fmt"
@@ -57,17 +57,13 @@ func testPrint(s string) {
 func runCrawler(url string) State {
 	f := MockFetcher.New()
 	state := New(url, f)
-	state.Run()
+	state.Start()
 	timeout := make(chan bool, 0)
 	go func() {
 		time.Sleep(10 * time.Second)
 		timeout <- true
 	}()
-	select {
-	case <-state.done:
-		return state
-	case <-state.failed:
-		panic("Failed to crawl!")
+	switch {
 	case <-timeout:
 		panic("crawl timed out!")
 	}

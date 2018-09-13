@@ -1,4 +1,4 @@
-package Crawler_test
+package crawler_test
 
 import (
 	"testing"

@@ -29,7 +29,7 @@ const (
 // CrawlControl is the struct that minds a particular crawler.
 type CrawlControl struct {
 	State   CrawlState
-	crawler *Crawler.State
+	crawler *crawler.State
 }
 
 // Fetcher defines an interface that can fetch URLs.
@@ -65,9 +65,6 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 	log.Debug("selecting command")
 
 	var newState CrawlControl
-	log.Debug("Checking for over")
-	c.checkForCrawlDoneOrFailed(url)
-	log.Debug("not over")
 	if state, ok := c.state[url]; ok {
 		log.Debug("executing for", url)
 		newState = state
@@ -76,20 +73,19 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 			status = changeState(url, "running", "running", "no action")
 		case done:
 			status = changeState(url, "done", "running", "last crawl discarded, restarting crawl")
-			c := Crawler.New(url, c.f)
-			newState.crawler = &c
-			c.Run()
+			newState.crawler = crawler.New(url, c.f)
+			newState.crawler.Start()
 			newState.State = running
 		case stopped:
 			status = changeState(url, "stopped", "running", "resuming crawl")
 			if newState.crawler != nil {
-				newState.crawler.Start()
+				newState.crawler.Resume()
 				newState.State = running
 			}
 		case failed:
 			status = changeState(url, "failed", "running", "retrying crawl")
 			if newState.crawler != nil {
-				newState.crawler.Run()
+				newState.crawler.Start()
 				newState.State = running
 			}
 		default:
@@ -100,9 +96,8 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 		// Actually start a new crawl
 		log.Debug("Start crawl")
 		status = changeState(url, translate(unknown), "running", "starting crawl")
-		c := Crawler.New(url, c.f)
-		newState.crawler = &c
-		c.Run()
+		newState.crawler = crawler.New(url, c.f)
+		newState.crawler.Start()
 		newState.State = running
 	}
 	c.state[url] = newState
@@ -110,8 +105,8 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 	return status, c.state[url].State, err
 }
 
-// Stop stops a crawl for a URL.
-func (c *CrawlServer) Stop(url string) (string, CrawlState, error) {
+// Pause pauses a crawl for a URL.
+func (c *CrawlServer) Pause(url string) (string, CrawlState, error) {
 	var status string
 	var err error
 
@@ -119,14 +114,13 @@ func (c *CrawlServer) Stop(url string) (string, CrawlState, error) {
 	defer (c.mutex.Unlock)()
 
 	var newState CrawlControl
-	c.checkForCrawlDoneOrFailed(url)
 	if newState, ok := c.state[url]; ok {
 		switch newState.State {
 		case running:
 			status = changeState(url, "running", "stopped", "crawl paused")
 			newState.State = stopped
 			if newState.crawler != nil {
-				newState.crawler.Stop()
+				newState.crawler.Pause()
 			}
 		case done, stopped, failed:
 			status = changeState(url, translate(newState.State), "stopped", "no action")
@@ -147,9 +141,6 @@ func (c *CrawlServer) Probe(url string) string {
 	c.mutex.Lock()
 	defer (c.mutex.Unlock)()
 
-	log.Debug("probe state")
-	c.checkForCrawlDoneOrFailed(url)
-	log.Debug("not failed")
 	if crawlerState, ok := c.state[url]; ok {
 		return translate(crawlerState.State)
 	}
@@ -166,10 +157,6 @@ func (c *CrawlServer) Show(url string) string {
 	defer (c.mutex.Unlock)()
 
 	var display string
-	log.Debug("check state")
-	c.checkForCrawlDoneOrFailed(url)
-	log.Debug("not done")
-
 	if state, ok := c.state[url]; ok {
 		switch state.State {
 		case running:
@@ -215,7 +202,7 @@ func (c *CrawlServer) CrawlSite(ctx context.Context, req *crawl.URLRequest) (*cr
 		status, state, err = c.Start(req.URL)
 
 	case crawl.URLRequest_STOP:
-		status, state, err = c.Stop(req.URL)
+		status, state, err = c.Pause(req.URL)
 
 	case crawl.URLRequest_CHECK:
 		status = c.Probe(req.URL)
@@ -243,17 +230,4 @@ func (c *CrawlServer) CrawlResult(ctx context.Context, req *crawl.URLRequest) (*
 	status := c.Probe(req.URL)
 	s := crawl.SiteNode{SiteURL: req.URL, TreeString: c.Show(req.URL), Status: status}
 	return &s, nil
-}
-
-func (c *CrawlServer) checkForCrawlDoneOrFailed(url string) {
-	// ONLY called after we've grabbed the mutex, so we don't grab it again.
-	// We might get called for a URL that isn't there yet, so skip out in that case.
-	if state, ok := c.state[url]; ok {
-		if state.crawler.HasFailed() {
-			state.State = failed
-		} else if state.crawler.IsDone() {
-			state.State = done
-		}
-		c.state[url] = state
-	}
 }

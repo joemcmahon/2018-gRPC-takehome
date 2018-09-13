@@ -1,4 +1,4 @@
-package Crawler
+package crawler
 
 import (
 	"errors"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/PuerkitoBio/purell"
 	"github.com/disiqueira/gotree"
+	"github.com/golang-collections/go-datastructures/queue"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -17,18 +18,29 @@ func init() {
 	}
 }
 
+type unprocessedItem struct {
+	insertPoint *gotree.Tree
+	URL         string
+}
+
+type controlFunc func()
+
 // State is the current state of the crawler.
 type State struct {
-	BaseURL  string
-	domain   string
-	cache    map[string]error
-	tree     *gotree.Tree
-	fetcher  Fetcher
-	debug    bool
-	done     bool
-	failed   bool
-	runState int
-	control  chan int
+	BaseURL     string
+	domain      string
+	cache       map[string]error
+	tree        *gotree.Tree
+	fetcher     Fetcher
+	debug       bool
+	Done        bool
+	unprocessed *queue.Queue
+	Start       controlFunc
+	Pause       controlFunc
+	Resume      controlFunc
+	Wait        controlFunc
+	Quit        controlFunc
+
 	sync.Mutex
 }
 
@@ -39,51 +51,20 @@ type Fetcher interface {
 	Fetch(url string) (body string, urls []string, err error)
 }
 
+const queueSize = 200
+
 // Use this value to mark a URL as busy in the URL cache.
 var errLoading = errors.New("url load in progress")
 
 // Use this value to mark a URL as leading offsite
 var errOffsite = errors.New("url points offsite")
 
-// Run denotes the state in which we're actively crawling.
-const Run = 0
-
-// Pause denotes the state is which we're not crawling and
-// are waiting to either be stopped or running again.
-const Pause = 1
-
-// Stop denotes the state in which all crawling stops for this URL.
-const Stop = 2
-
-// stoppedOrCrawling hides the details of the run/pause/stop
-// mechanism from the crawl function.
-func (state *State) stoppedOrCrawling() int {
-	log.Debug("decide if stopped or crawling")
-	state.Lock()
-	defer (state.Unlock)()
-
-	if state.runState != Pause {
-		log.Debug("in proper active state")
-		return state.runState
+func (state *State) crawlPage() {
+	if state.unprocessed.Empty() {
 	}
-
-	// Paused. Trap us inside this function until we receive
-	// a new state.
-	for {
-		log.Debug("paused, wait for signal")
-		// Wait until we receive a control signal.
-		newState := <-state.control
-		log.Debug("received signal", newState)
-		if newState != Pause {
-			// Either stopped or started; return new status
-			// and stop monitoring.
-			log.Debug("unpaused")
-			state.runState = newState
-			return newState
-		}
-		// Still paused. Go back and wait for another signal.
-		log.Debug("still paused")
-	}
+	z, _ := state.unprocessed.Get(1)
+	item := z[0].(unprocessedItem)
+	state.crawl(item.URL, item.insertPoint)
 }
 
 // crawl uses Fetcher to recursively crawl pages starting with URL.
@@ -93,13 +74,6 @@ func (state *State) crawl(URL string, current *gotree.Tree) {
 	// record URL under current SiteTree. If none exists, create.
 	// If we detect that we're paused inside stoppedOrCrawling(), we
 	// won't exit it until we are moved to stopped or running.
-	log.Debug("Checking run state")
-	if state.stoppedOrCrawling() == Stop {
-		// Stopped. No more crawling, and skip this one too.
-		log.Debug("terminating crawl due to stop")
-		state.Unlock()
-		return
-	}
 
 	// Skip empty links.
 	if URL == "" {
@@ -200,90 +174,12 @@ func purify(URL string) (string, error) {
 		purell.FlagsAllNonGreedy&^purell.FlagRemoveDirectoryIndex&^purell.FlagForceHTTP&^purell.FlagAddWWW)
 }
 
-// New takes a URL and a Fetcher and returns a State.
-func New(baseURL string, fetcher Fetcher) State {
-	b, err := purify(baseURL)
-	s := State{
-		BaseURL:  b,
-		cache:    make(map[string]error),
-		fetcher:  fetcher,
-		runState: Run,
-		control:  make(chan int),
-	}
-	if err != nil {
-		// bad initial URL. fail crawl right away.
-		s.BaseURL = baseURL
-
-		s.failed = true
-		s.done = true
-	}
-	// purify() will have returned a valid URL.
-	u, _ := url.Parse(baseURL)
-	s.domain = u.Host
-	return s
-}
-
 // Debug turns debug logging on or off.
 func Debug(state bool) {
 	if state == true {
 		log.SetLevel(log.DebugLevel)
 	} else {
 		log.SetLevel(log.FatalLevel)
-	}
-}
-
-// Pause temporarily halts the crawl.
-func (state *State) Pause() {
-	state.control <- Pause
-}
-
-// Start resumes the crawl.
-func (state *State) Start() {
-	state.control <- Run
-}
-
-// Stop cancels the crawl.
-func (state *State) Stop() {
-	state.control <- Stop
-}
-
-// IsDone lets external entites safely check to see if the crawl is done.
-func (state *State) IsDone() bool {
-	if state == nil {
-		return false
-	}
-	state.Lock()
-	defer (state.Unlock)()
-	log.Debug("check if done")
-	switch {
-	case state.done:
-		log.Debug("done")
-		return true
-	case state.failed:
-		log.Debug("failed, force done")
-		state.failed = true
-		return true
-	default:
-		log.Debug("not done")
-		return false
-	}
-}
-
-// HasFailed lets external entities see if the crawl failed.
-func (state *State) HasFailed() bool {
-	if state == nil {
-		return false
-	}
-	state.Lock()
-	defer (state.Unlock)()
-	log.Debug("check if failed")
-	switch {
-	case state.failed:
-		log.Debug("failed")
-		return true
-	default:
-		log.Debug("still ok")
-		return false
 	}
 }
 
@@ -296,35 +192,121 @@ func (state *State) Format() string {
 	return (*state.tree).Print()
 }
 
-// Run takes a URL and a Fetcher to fetch URLs, crawls the tree,
+// New takes a URL and a Fetcher to fetch URLs.
+// It initializes the crawler's data structures and returns a set of closures
+// that can be used to start, pause, resume, and quit crawling. It also
+// provides a wait() function to ensure that we can wait for the process to
+// complete if we so desire. See https://stackoverflow.com/questions/38798863/golang-pause-a-loop-in-a-goroutine-with-channels
 // holding the crawl state in the State pointer passed in.
-func (state *State) Run() {
-	state.Lock()
-	state.cache = make(map[string]error)
-	state.tree = nil
-	state.Unlock()
+func New(URL string, f Fetcher) *State {
+	state := State{
+		cache:       make(map[string]error),
+		tree:        nil,
+		fetcher:     f,
+		unprocessed: queue.New(queueSize),
+	}
+	b, err := purify(URL)
+	if err != nil {
+		// bad initial URL. fail crawl right away.
+		state.BaseURL = URL
+		state.Done = true
+		return &state
+	}
+	state.BaseURL = b
+	// purify() will have returned a valid URL.
+	u, _ := url.Parse(b)
+	state.domain = u.Host
+
+	state.unprocessed.Put(unprocessedItem{URL: URL, insertPoint: nil})
 
 	if os.Getenv("TESTING") != "" {
 		Debug(true)
 	}
-	if state == nil {
-		return
-	}
-	// Run the crawl asynchronously; when it terminates, set the done flag to true.
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Debug("crawl panicked:", r)
-				state.Lock()
-				state.failed = true
-				state.Unlock()
+	state.Start, state.Pause, state.Resume, state.Quit, state.Wait = state.controls()
+	return &state
+}
+
+// controls() controls the run/pause behavior for the crawl. It
+// returns the controller functions needed to actually do the
+// control operations on the crawl.
+func (state *State) controls() (start, pause, resume, quit, wait func()) {
+	var (
+		chWork       <-chan struct{}
+		chWorkBackup <-chan struct{}
+		chControl    chan struct{}
+		wg           sync.WaitGroup
+	)
+
+	// Routine encapsulates the logic to run one iteration of the
+	// crawl, with run/pause controls.
+	routine := func() {
+		// Defer this so that if we quit, the waitgroup is closed out.
+		defer wg.Done()
+
+		for {
+			select {
+			case <-chWork:
+				// crawl another URL, putting its sub-URLs on the queue.
+				// If the queue is empty, crawlPage will quit().
+				state.crawlPage()
+			case _, ok := <-chControl:
+				if ok {
+					continue
+				}
+				return
 			}
-		}()
-		log.Debug("launch crawl")
-		state.crawl(state.BaseURL, state.tree)
-		log.Debug("Crawl complete")
+		}
+	}
+
+	start = func() {
+		// chWork, chWorkBackup: two closed channels to
+		// force a return when the read is done.
+		ch := make(chan struct{})
+		close(ch)
+		chWork = ch
+		chWorkBackup = ch
+
+		// chControl is used to actually control whether we
+		// run more goroutines.
+		chControl = make(chan struct{})
+
+		// wg
+		wg = sync.WaitGroup{}
+		wg.Add(1)
+
+		// Run one more iteration of the crawl. Any URLs
+		// found will be queued to be processed on the next
+		// go-round.
+		go routine()
+	}
+
+	pause = func() {
+		// Used to disable the case that actually does work.
+		// (Read from a nil channel in a select case causes
+		// that case to be skipped.)
+		chWork = nil
+		chControl <- struct{}{}
+	}
+
+	resume = func() {
+		// Restore the channel to re-enable the case.
+		chWork = chWorkBackup
+		chControl <- struct{}{}
+	}
+
+	quit = func() {
+		// Read on a nil channel forces a return.
+		chWork = nil
+		close(chControl)
 		state.Lock()
-		state.done = true
+		state.Done = true
 		state.Unlock()
-	}()
+	}
+
+	wait = func() {
+		// Wait for all operations to cease.
+		wg.Wait()
+	}
+
+	return
 }
