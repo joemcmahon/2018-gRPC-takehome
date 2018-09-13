@@ -70,19 +70,15 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 	log.Debug("not over")
 	if state, ok := c.state[url]; ok {
 		log.Debug("executing for", url)
-		newState := state
+		newState = state
 		switch state.State {
 		case running:
 			status = changeState(url, "running", "running", "no action")
 		case done:
 			status = changeState(url, "done", "running", "last crawl discarded, restarting crawl")
-			if newState.crawler != nil {
-				newState.crawler.Run()
-			} else {
-				c := Crawler.New(url, c.f)
-				newState.crawler = &c
-				c.Run()
-			}
+			c := Crawler.New(url, c.f)
+			newState.crawler = &c
+			c.Run()
 			newState.State = running
 		case stopped:
 			status = changeState(url, "stopped", "running", "resuming crawl")
@@ -103,14 +99,13 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 	} else {
 		// Actually start a new crawl
 		log.Debug("Start crawl")
+		status = changeState(url, translate(unknown), "running", "starting crawl")
 		c := Crawler.New(url, c.f)
 		newState.crawler = &c
 		c.Run()
-		status = changeState(url, translate(unknown), "running", "starting crawl")
 		newState.State = running
 	}
 	c.state[url] = newState
-	log.Debug("updating to", newState)
 	log.Infof(status)
 	return status, c.state[url].State, err
 }
@@ -178,13 +173,9 @@ func (c *CrawlServer) Show(url string) string {
 	if state, ok := c.state[url]; ok {
 		switch state.State {
 		case running:
-			// Stop it, run the formatter, start it.
-			// Note we don't have to lock it while formatting
-			// because the goroutine is paused, waiting for
-			// the Start() call to resume.
-			state.crawler.Pause()
+			state.crawler.Lock()
 			display = state.crawler.Format()
-			state.crawler.Start()
+			state.crawler.Unlock()
 		case stopped, done:
 			display = state.crawler.Format()
 		case failed:

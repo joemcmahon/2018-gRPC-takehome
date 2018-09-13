@@ -25,8 +25,8 @@ type State struct {
 	tree     *gotree.Tree
 	fetcher  Fetcher
 	debug    bool
-	done     chan bool
-	failed   chan bool
+	done     bool
+	failed   bool
 	runState int
 	control  chan int
 	sync.Mutex
@@ -207,16 +207,15 @@ func New(baseURL string, fetcher Fetcher) State {
 		BaseURL:  b,
 		cache:    make(map[string]error),
 		fetcher:  fetcher,
-		done:     make(chan bool),
-		failed:   make(chan bool),
 		runState: Run,
 		control:  make(chan int),
 	}
 	if err != nil {
 		// bad initial URL. fail crawl right away.
 		s.BaseURL = baseURL
-		s.failed <- true
-		s.done <- true
+
+		s.failed = true
+		s.done = true
 	}
 	// purify() will have returned a valid URL.
 	u, _ := url.Parse(baseURL)
@@ -256,13 +255,13 @@ func (state *State) IsDone() bool {
 	state.Lock()
 	defer (state.Unlock)()
 	log.Debug("check if done")
-	select {
-	case <-state.done:
+	switch {
+	case state.done:
 		log.Debug("done")
 		return true
-	case <-state.failed:
+	case state.failed:
 		log.Debug("failed, force done")
-		state.failed <- true
+		state.failed = true
 		return true
 	default:
 		log.Debug("not done")
@@ -278,8 +277,8 @@ func (state *State) HasFailed() bool {
 	state.Lock()
 	defer (state.Unlock)()
 	log.Debug("check if failed")
-	select {
-	case <-state.failed:
+	switch {
+	case state.failed:
 		log.Debug("failed")
 		return true
 	default:
@@ -300,6 +299,11 @@ func (state *State) Format() string {
 // Run takes a URL and a Fetcher to fetch URLs, crawls the tree,
 // holding the crawl state in the State pointer passed in.
 func (state *State) Run() {
+	state.Lock()
+	state.cache = make(map[string]error)
+	state.tree = nil
+	state.Unlock()
+
 	if os.Getenv("TESTING") != "" {
 		Debug(true)
 	}
@@ -311,12 +315,16 @@ func (state *State) Run() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Debug("crawl panicked:", r)
-				state.failed <- true
+				state.Lock()
+				state.failed = true
+				state.Unlock()
 			}
 		}()
 		log.Debug("launch crawl")
 		state.crawl(state.BaseURL, state.tree)
 		log.Debug("Crawl complete")
-		state.done <- true
+		state.Lock()
+		state.done = true
+		state.Unlock()
 	}()
 }
