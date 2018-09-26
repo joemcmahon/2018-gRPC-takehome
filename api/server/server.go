@@ -1,12 +1,10 @@
 package Server
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/joemcmahon/joe_macmahon_technical_test/api/crawl"
 	"github.com/joemcmahon/joe_macmahon_technical_test/crawler"
@@ -116,7 +114,6 @@ func (c *CrawlServer) Pause(url string) (string, CrawlState, error) {
 	c.mutex.Lock()
 	defer (c.mutex.Unlock)()
 
-	var newState CrawlControl
 	if newState, ok := c.crawlers[url]; ok {
 		switch newState.State {
 		case running:
@@ -135,7 +132,6 @@ func (c *CrawlServer) Pause(url string) (string, CrawlState, error) {
 		status = c.changeState(url, translate(unknown), "stopped", "no action")
 	}
 	log.Infof(status)
-	c.crawlers[url] = newState
 	return status, c.crawlers[url].State, err
 }
 
@@ -254,30 +250,4 @@ func (c *CrawlServer) CrawlResult(req *crawl.URLRequest, stream crawl.Crawl_Craw
 		}
 	}
 	return nil
-}
-
-const (
-	spaceByte   = ' '
-	tildaByte   = '~'
-	percentByte = '%'
-)
-
-func percentEncode(msg string) string {
-	var buf bytes.Buffer
-	for len(msg) > 0 {
-		r, size := utf8.DecodeRuneInString(msg)
-		if r != 0 {
-			for _, b := range []byte(string(r)) {
-				if size > 1 {
-					if r == utf8.RuneError {
-						buf.WriteString(fmt.Sprintf("%%%02X", b))
-						continue
-					}
-				}
-				buf.WriteByte(b)
-			}
-		}
-		msg = msg[size:]
-	}
-	return buf.String()
 }
