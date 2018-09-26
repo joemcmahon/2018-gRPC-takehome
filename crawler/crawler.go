@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/PuerkitoBio/purell"
 	"github.com/disiqueira/gotree"
@@ -61,6 +62,7 @@ var errOffsite = errors.New("url points offsite")
 
 func (state *State) crawlPage() {
 	if state.unprocessed.Empty() {
+		state.Quit()
 	}
 	z, _ := state.unprocessed.Get(1)
 	item := z[0].(unprocessedItem)
@@ -151,20 +153,12 @@ func (state *State) crawl(URL string, current *gotree.Tree) {
 		return
 	}
 	log.Debugf("Found: %s %q\n", URL, body)
-	done := make(chan bool)
 	for i, u := range urls {
 		// Ignoring the error because fetched URLs should already be
 		// valid URLs of some sort.
 		u, _ = purify(u)
-		log.Debugf("-> Crawling child %v/%v of %v : %v.\n", i, len(urls), URL, u)
-		go func(URL string) {
-			state.crawl(URL, &newT)
-			done <- true
-		}(u)
-	}
-	for i := range urls {
-		log.Debugf("<- [%v] %v/%v Waiting for child\n", URL, i, len(urls))
-		<-done
+		log.Debugf("-> Queuingchild %v/%v of %v : %v.\n", i, len(urls), URL, u)
+		state.unprocessed.Put(unprocessedItem{URL: u, insertPoint: &newT})
 	}
 	log.Debugf("<- Done with %v\n", URL)
 }
@@ -246,9 +240,11 @@ func (state *State) controls() (start, pause, resume, quit, wait func()) {
 		for {
 			select {
 			case <-chWork:
-				// crawl another URL, putting its sub-URLs on the queue.
+				// crawl another URL, putting its sub-URLs on the queue,
+				// then release the CPU.
 				// If the queue is empty, crawlPage will quit().
 				state.crawlPage()
+				time.Sleep(100 * time.Millisecond)
 			case _, ok := <-chControl:
 				if ok {
 					continue

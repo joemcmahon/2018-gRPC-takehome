@@ -16,8 +16,7 @@ const fourOhFour = "http://example.com\n"
 const knownURL = "http://golang.org/"
 const unknownURL = "http://example.com"
 const expectedStart = `http://golang.org/
-├── http://golang.org/cmd/
-└── http://golang.org/pkg/`
+├── http://golang.org/`
 
 var _ = Describe("crawler", func() {
 	if os.Getenv("TESTING") != "" {
@@ -33,6 +32,7 @@ var _ = Describe("crawler", func() {
 				// not always going to come back in the same order
 				// past the top level.
 				Expect(strings.HasPrefix(answer, expectedStart)).To(BeTrue())
+				Expect(state.Done).To(BeTrue())
 			})
 		})
 	})
@@ -42,7 +42,8 @@ var _ = Describe("crawler", func() {
 		testPrint(answer)
 		Context("scanning data we don't have", func() {
 			It("shows the empty tree as we expect it", func() {
-				Expect(answer).To(Equal("http://example.com/\n"))
+				Expect(answer).To(Equal("http://example.com\n"))
+				Expect(state.Done).To(BeTrue())
 			})
 		})
 	})
@@ -58,14 +59,6 @@ func runCrawler(url string) State {
 	f := MockFetcher.New()
 	state := New(url, f)
 	state.Start()
-	timeout := make(chan bool, 0)
-	go func() {
-		time.Sleep(10 * time.Second)
-		timeout <- true
-	}()
-	switch {
-	case <-timeout:
-		panic("crawl timed out!")
-	}
-	return state
+	time.Sleep(5 * time.Second)
+	return *state
 }

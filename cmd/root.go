@@ -23,6 +23,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -71,12 +72,22 @@ func format(args []string, usage string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	req := pb.URLRequest{URL: url, State: pb.URLRequest_SHOW}
-	state, err := c.CrawlResult(ctx, &req)
+	stream, err := c.CrawlResult(ctx, &req)
 	if err != nil {
-		fmt.Println("Failed to fetch status: %s", err.Error())
+		fmt.Println("Failed to open stream: %s", err.Error())
 		return
 	}
-	fmt.Println(state.TreeString)
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Println("Can't read server stream: %s", err.Error())
+			return
+		}
+		fmt.Println(resp.TreeString)
+	}
 }
 
 var cfgFile string
