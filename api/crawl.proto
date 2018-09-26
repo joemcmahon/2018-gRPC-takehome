@@ -61,5 +61,5 @@ service Crawl {
     rpc CrawlSite (URLRequest) returns (URLState) {}
     // Checks the current status of a crawl and returns
     // the tree as it stands.
-    rpc CrawlResult (URLRequest) returns (SiteNode) {}
+    rpc CrawlResult (URLRequest) returns (stream SiteNode) {}
 }

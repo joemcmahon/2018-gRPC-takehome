@@ -1,9 +1,13 @@
 package Server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/joemcmahon/joe_macmahon_technical_test/api/crawl"
 	"github.com/joemcmahon/joe_macmahon_technical_test/crawler"
@@ -44,14 +48,14 @@ type CrawlServer struct {
 	mutex sync.Mutex
 	f     Fetcher
 	// Crawler state for each URL
-	state map[string]CrawlControl
+	crawlers map[string]CrawlControl
 }
 
 // New creates and returns an empty CrawlServer.
 func New(f Fetcher) *CrawlServer {
 	return &CrawlServer{
-		f:     f,
-		state: make(map[string]CrawlControl),
+		f:        f,
+		crawlers: make(map[string]CrawlControl),
 	}
 }
 
@@ -65,44 +69,44 @@ func (c *CrawlServer) Start(url string) (string, CrawlState, error) {
 	log.Debug("selecting command")
 
 	var newState CrawlControl
-	if state, ok := c.state[url]; ok {
+	if state, ok := c.crawlers[url]; ok {
 		log.Debug("executing for", url)
 		newState = state
 		switch state.State {
 		case running:
-			status = changeState(url, "running", "running", "no action")
+			status = c.changeState(url, "running", "running", "no action")
 		case done:
-			status = changeState(url, "done", "running", "last crawl discarded, restarting crawl")
+			status = c.changeState(url, "done", "running", "last crawl discarded, restarting crawl")
 			newState.crawler = crawler.New(url, c.f)
 			newState.crawler.Start()
 			newState.State = running
 		case stopped:
-			status = changeState(url, "stopped", "running", "resuming crawl")
+			status = c.changeState(url, "stopped", "running", "resuming crawl")
 			if newState.crawler != nil {
 				newState.crawler.Resume()
 				newState.State = running
 			}
 		case failed:
-			status = changeState(url, "failed", "running", "retrying crawl")
+			status = c.changeState(url, "failed", "running", "retrying crawl")
 			if newState.crawler != nil {
 				newState.crawler.Start()
 				newState.State = running
 			}
 		default:
 			// This would be an entry in state 'unknown', which should not be possible.
-			panic(changeState(url, "invalid state", "running", "panic!"))
+			panic(c.changeState(url, "invalid state", "running", "panic!"))
 		}
 	} else {
 		// Actually start a new crawl
 		log.Debug("Start crawl")
-		status = changeState(url, translate(unknown), "running", "starting crawl")
+		status = c.changeState(url, translate(unknown), "running", "starting crawl")
 		newState.crawler = crawler.New(url, c.f)
 		newState.crawler.Start()
 		newState.State = running
 	}
-	c.state[url] = newState
+	c.crawlers[url] = newState
 	log.Infof(status)
-	return status, c.state[url].State, err
+	return status, c.crawlers[url].State, err
 }
 
 // Pause pauses a crawl for a URL.
@@ -114,26 +118,26 @@ func (c *CrawlServer) Pause(url string) (string, CrawlState, error) {
 	defer (c.mutex.Unlock)()
 
 	var newState CrawlControl
-	if newState, ok := c.state[url]; ok {
+	if newState, ok := c.crawlers[url]; ok {
 		switch newState.State {
 		case running:
-			status = changeState(url, "running", "stopped", "crawl paused")
+			status = c.changeState(url, "running", "stopped", "crawl paused")
 			newState.State = stopped
 			if newState.crawler != nil {
 				newState.crawler.Pause()
 			}
 		case done, stopped, failed:
-			status = changeState(url, translate(newState.State), "stopped", "no action")
+			status = c.changeState(url, translate(newState.State), "stopped", "no action")
 		default:
 			// This would be an entry in state 'unknown', which should not be possible.
-			panic(changeState(url, "invalid state", "running", "panic!"))
+			panic(c.changeState(url, "invalid state", "running", "panic!"))
 		}
 	} else {
-		status = changeState(url, translate(unknown), "stopped", "no action")
+		status = c.changeState(url, translate(unknown), "stopped", "no action")
 	}
 	log.Infof(status)
-	c.state[url] = newState
-	return status, c.state[url].State, err
+	c.crawlers[url] = newState
+	return status, c.crawlers[url].State, err
 }
 
 // Probe checks the current state of a crawl without changing anything.
@@ -141,7 +145,7 @@ func (c *CrawlServer) Probe(url string) string {
 	c.mutex.Lock()
 	defer (c.mutex.Unlock)()
 
-	if crawlerState, ok := c.state[url]; ok {
+	if crawlerState, ok := c.crawlers[url]; ok {
 		return translate(crawlerState.State)
 	}
 	return translate(unknown)
@@ -157,7 +161,7 @@ func (c *CrawlServer) Show(url string) string {
 	defer (c.mutex.Unlock)()
 
 	var display string
-	if state, ok := c.state[url]; ok {
+	if state, ok := c.crawlers[url]; ok {
 		switch state.State {
 		case running:
 			state.crawler.Lock()
@@ -187,7 +191,10 @@ func translate(state CrawlState) string {
 	return xlate[state]
 }
 
-func changeState(url, old, new, result string) string {
+func (c *CrawlServer) changeState(url, old, new, result string) string {
+	z := c.crawlers[url]
+	z.State = saveableState(new)
+	c.crawlers[url] = z
 	return fmt.Sprintf("Change %s in state %s to %s: %s", url, old, new, result)
 }
 
@@ -225,9 +232,59 @@ func sendableState(state CrawlState) crawl.URLState_Status {
 	return sendable[state]
 }
 
+var saveable = map[string]CrawlState{
+	"stopped": stopped,
+	"running": running,
+	"done":    done,
+	"unknown": unknown,
+	"failed":  failed,
+}
+
+func saveableState(state string) CrawlState {
+	return saveable[state]
+}
+
 // CrawlResult sends the status of a given URL back over gRPC.
-func (c *CrawlServer) CrawlResult(ctx context.Context, req *crawl.URLRequest) (*crawl.SiteNode, error) {
+func (c *CrawlServer) CrawlResult(req *crawl.URLRequest, stream crawl.Crawl_CrawlResultServer) error {
 	status := c.Probe(req.URL)
-	s := crawl.SiteNode{SiteURL: req.URL, TreeString: c.Show(req.URL), Status: status}
-	return &s, nil
+	reader := strings.NewReader(c.Show(req.URL))
+	b := make([]byte, 2048)
+	for {
+		_, err := reader.Read(b)
+		if err == io.EOF {
+			break
+		}
+		treeChunk := percentEncode(string(b))
+		s := crawl.SiteNode{SiteURL: req.URL, TreeString: treeChunk, Status: status}
+		if fail := stream.Send(&s); fail != nil {
+			return fail
+		}
+	}
+	return nil
+}
+
+const (
+	spaceByte   = ' '
+	tildaByte   = '~'
+	percentByte = '%'
+)
+
+func percentEncode(msg string) string {
+	var buf bytes.Buffer
+	for len(msg) > 0 {
+		r, size := utf8.DecodeRuneInString(msg)
+		if r != 0 {
+			for _, b := range []byte(string(r)) {
+				if size > 1 {
+					if r == utf8.RuneError {
+						buf.WriteString(fmt.Sprintf("%%%02X", b))
+						continue
+					}
+				}
+				buf.WriteByte(b)
+			}
+		}
+		msg = msg[size:]
+	}
+	return buf.String()
 }

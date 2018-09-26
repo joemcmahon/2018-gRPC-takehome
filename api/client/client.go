@@ -21,7 +21,7 @@ func (c *CrawlClient) CrawlSite(ctx context.Context, in *pb.URLRequest, opts ...
 }
 
 // CrawlResult allows us to check on the results for a crawl.
-func (c *CrawlClient) CrawlResult(ctx context.Context, in *pb.URLRequest, opts ...grpc.CallOption) (*pb.SiteNode, error) {
+func (c *CrawlClient) CrawlResult(ctx context.Context, in *pb.URLRequest, opts ...grpc.CallOption) (pb.Crawl_CrawlResultClient, error) {
 	return c.client.CrawlResult(ctx, in, opts...)
 }
 

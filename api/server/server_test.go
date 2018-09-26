@@ -21,7 +21,7 @@ var _ = Describe("matches logs", func() {
 			logHook := logcap.NewLogHook()
 			logHook.Start()
 			defer logHook.Stop()
-			s.Stop(example)
+			s.Pause(example)
 			Ω(logHook).Should(logcap.HaveLogs(changeState(example, "running", "stopped", "crawl paused")))
 		})
 		It("tries change running to running", func() {
@@ -39,7 +39,7 @@ var _ = Describe("matches logs", func() {
 			logHook := logcap.NewLogHook()
 			logHook.Start()
 			defer logHook.Stop()
-			s.Stop(example)
+			s.Pause(example)
 			Ω(logHook).Should(logcap.HaveLogs(changeState(example, "stopped", "stopped", "no action")))
 		})
 		It("tries change stopped to running", func() {
@@ -59,7 +59,7 @@ var _ = Describe("matches logs", func() {
 			logHook := logcap.NewLogHook()
 			logHook.Start()
 			defer logHook.Stop()
-			s.Stop(missing)
+			s.Pause(missing)
 			Ω(logHook).Should(logcap.HaveLogs(changeState(missing, "unknown", "stopped", "no action")))
 		})
 		It("tries change unknown to running", func() {
@@ -77,7 +77,7 @@ var _ = Describe("matches logs", func() {
 			logHook := logcap.NewLogHook()
 			logHook.Start()
 			defer logHook.Stop()
-			s.Stop(example)
+			s.Pause(example)
 			Ω(logHook).Should(logcap.HaveLogs(changeState(example, "failed", "stopped", "no action")))
 		})
 		It("tries change failed to running", func() {
@@ -95,7 +95,7 @@ var _ = Describe("matches logs", func() {
 			logHook := logcap.NewLogHook()
 			logHook.Start()
 			defer logHook.Stop()
-			s.Stop(example)
+			s.Pause(example)
 			Ω(logHook).Should(logcap.HaveLogs(changeState(example, "done", "stopped", "no action")))
 		})
 		It("tries change done to running", func() {
