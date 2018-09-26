@@ -10,6 +10,7 @@ import (
 	"github.com/PuerkitoBio/purell"
 	"github.com/disiqueira/gotree"
 	"github.com/golang-collections/go-datastructures/queue"
+	sharedTree "github.com/joemcmahon/joe_macmahon_technical_test/crawler/shared-tree"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -31,7 +32,7 @@ type State struct {
 	BaseURL     string
 	domain      string
 	cache       map[string]error
-	tree        *gotree.Tree
+	tree        *sharedTree.Tree
 	fetcher     Fetcher
 	debug       bool
 	Done        bool
@@ -96,15 +97,14 @@ func (state *State) crawl(URL string, current *gotree.Tree) {
 
 	// We want to record the link, even if it's bad.
 	state.Lock()
-	var newT gotree.Tree
+	var newT *gotree.Tree
 	if current == nil {
 		// Tree's empty; build a new one.
-		newT = gotree.New(URL)
-		current = &newT
-		state.tree = current
+		newT = state.tree.AddAt(nil, URL)
+		current = newT
 	} else {
 		// Add this URL under the current node.
-		newT = (*current).Add(URL)
+		newT = state.tree.AddAt(current, URL)
 	}
 	state.Unlock()
 
@@ -158,7 +158,7 @@ func (state *State) crawl(URL string, current *gotree.Tree) {
 		// valid URLs of some sort.
 		u, _ = purify(u)
 		log.Debugf("-> Queuingchild %v/%v of %v : %v.\n", i, len(urls), URL, u)
-		state.unprocessed.Put(unprocessedItem{URL: u, insertPoint: &newT})
+		state.unprocessed.Put(unprocessedItem{URL: u, insertPoint: newT})
 	}
 	log.Debugf("<- Done with %v\n", URL)
 }
@@ -183,7 +183,7 @@ func (state *State) Format() string {
 		log.Debug("tree is not initialized")
 		return ""
 	}
-	return (*state.tree).Print()
+	return state.tree.Format()
 }
 
 // New takes a URL and a Fetcher to fetch URLs.
@@ -195,10 +195,11 @@ func (state *State) Format() string {
 func New(URL string, f Fetcher) *State {
 	state := State{
 		cache:       make(map[string]error),
-		tree:        nil,
+		tree:        sharedTree.New(),
 		fetcher:     f,
 		unprocessed: queue.New(queueSize),
 	}
+	state.tree.Run()
 	b, err := purify(URL)
 	if err != nil {
 		// bad initial URL. fail crawl right away.
@@ -217,6 +218,7 @@ func New(URL string, f Fetcher) *State {
 		Debug(true)
 	}
 	state.Start, state.Pause, state.Resume, state.Quit, state.Wait = state.controls()
+	log.Debugf("crawl for %s initialized", URL)
 	return &state
 }
 
@@ -235,6 +237,7 @@ func (state *State) controls() (start, pause, resume, quit, wait func()) {
 	// crawl, with run/pause controls.
 	routine := func() {
 		// Defer this so that if we quit, the waitgroup is closed out.
+		log.Debug("*** RUNLOOP ***")
 		defer wg.Done()
 
 		for {
@@ -255,6 +258,7 @@ func (state *State) controls() (start, pause, resume, quit, wait func()) {
 	}
 
 	start = func() {
+		log.Debug("*** START ***")
 		// chWork, chWorkBackup: two closed channels to
 		// force a return when the read is done.
 		ch := make(chan struct{})
@@ -277,6 +281,7 @@ func (state *State) controls() (start, pause, resume, quit, wait func()) {
 	}
 
 	pause = func() {
+		log.Debug("*** PAUSE ***")
 		// Used to disable the case that actually does work.
 		// (Read from a nil channel in a select case causes
 		// that case to be skipped.)
@@ -285,12 +290,14 @@ func (state *State) controls() (start, pause, resume, quit, wait func()) {
 	}
 
 	resume = func() {
+		log.Debug("*** RESUME ***")
 		// Restore the channel to re-enable the case.
 		chWork = chWorkBackup
 		chControl <- struct{}{}
 	}
 
 	quit = func() {
+		log.Debug("*** QUIT ***")
 		// Read on a nil channel forces a return.
 		chWork = nil
 		close(chControl)
@@ -300,6 +307,7 @@ func (state *State) controls() (start, pause, resume, quit, wait func()) {
 	}
 
 	wait = func() {
+		log.Debug("*** WAIT ***")
 		// Wait for all operations to cease.
 		wg.Wait()
 	}

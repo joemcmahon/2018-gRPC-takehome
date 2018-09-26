@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -247,16 +246,10 @@ func saveableState(state string) CrawlState {
 // CrawlResult sends the status of a given URL back over gRPC.
 func (c *CrawlServer) CrawlResult(req *crawl.URLRequest, stream crawl.Crawl_CrawlResultServer) error {
 	status := c.Probe(req.URL)
-	reader := strings.NewReader(c.Show(req.URL))
-	b := make([]byte, 2048)
-	for {
-		_, err := reader.Read(b)
-		if err == io.EOF {
-			break
-		}
-		treeChunk := percentEncode(string(b))
-		s := crawl.SiteNode{SiteURL: req.URL, TreeString: treeChunk, Status: status}
-		if fail := stream.Send(&s); fail != nil {
+	result := c.Show(req.URL)
+	for _, s := range strings.Split(result, "\n") {
+		n := crawl.SiteNode{SiteURL: req.URL, TreeString: s, Status: status}
+		if fail := stream.Send(&n); fail != nil {
 			return fail
 		}
 	}
