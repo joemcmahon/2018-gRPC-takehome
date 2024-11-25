@@ -134,3 +134,5 @@ providing the minimum "thanks, appreciate your effort here, but we've decided no
 
 I would note that I had at the time been evaluating the company's product to see if it was going to work for me as 
 a Dropbox alternative. I decided to not "move forward" too, deleted it, and haven't looked at it since.
+
+Oh, and they spelled my name wrong when creating the original repo. My resume was `right there`.
