@@ -1,4 +1,4 @@
-# iTechnical test: Go developer
+# Technical test: Go developer
 ```
 The following test is to be implemented in Go and while you can take as much time as you need, it's not expected that you spend more than 3 or 4 hours on it.
 ```
